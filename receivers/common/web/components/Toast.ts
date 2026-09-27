@@ -1,9 +1,10 @@
 export enum ToastIcon {
     INFO,
+    WARNING,
     ERROR,
 }
 
-const toastQueue = []
+const toastQueue: { message: string, icon: ToastIcon, duration: number }[] = []
 
 export function toast(message: string, icon: ToastIcon = ToastIcon.INFO, duration: number = 5000) {
     toastQueue.push({ message: message, icon: icon, duration: duration });
@@ -38,6 +39,10 @@ function renderToast(message: string, icon: ToastIcon = ToastIcon.INFO, duration
     switch (icon) {
         case ToastIcon.INFO:
             toastIcon.style.backgroundImage = 'url(../assets/icons/app/info.svg)';
+            break;
+
+        case ToastIcon.WARNING:
+            toastIcon.style.backgroundImage = 'url(../assets/icons/app/warning.svg)';
             break;
 
         case ToastIcon.ERROR:

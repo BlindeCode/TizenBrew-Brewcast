@@ -1,18 +1,13 @@
 import * as net from 'net';
+import { ListenerService } from 'common/ListenerService';
 import { FCastSession } from 'common/FCastSession';
-import { Opcode } from 'common/Packets';
-import { EventEmitter } from 'events';
-import { Main, errorHandler } from 'src/Main';
-import { v4 as uuidv4 } from 'modules/uuid';
+import { Opcode, PROTOCOL_VERSION, VersionMessage } from 'common/Packets';
+import { Logger, LoggerType } from 'common/Logger';
+const logger = new Logger('TcpListenerService', LoggerType.BACKEND);
 
-export class TcpListenerService {
-    public static PORT = 46899;
-    private static TIMEOUT = 2500;
-
-    emitter = new EventEmitter();
-
+export class TcpListenerService extends ListenerService {
+    public static readonly PORT = 46899;
     private server: net.Server;
-    private sessions: FCastSession[] = [];
 
     start() {
         if (this.server != null) {
@@ -36,84 +31,49 @@ export class TcpListenerService {
         server.close();
     }
 
-    send(opcode: number, message = null) {
-        // Main.logger.info(`Sending message ${JSON.stringify(message)}`);
-        this.sessions.forEach(session => {
-            try {
-                session.send(opcode, message);
-            } catch (e) {
-                Main.logger.warn("Failed to send error.", e);
-                session.close();
-            }
-        });
+    disconnect(sessionId: string) {
+        this.sessionMap.get(sessionId)?.socket.destroy();
+        this.sessionMap.delete(sessionId);
     }
 
-    private async handleServerError(err: NodeJS.ErrnoException) {
-        errorHandler(err);
+    public getSenders(): string[] {
+        const senders = [];
+        this.sessionMap.forEach((sender) => { senders.push(sender.socket.remoteAddress); });
+        return senders;
     }
 
     private handleConnection(socket: net.Socket) {
-        Main.logger.info(`new connection from ${socket.remoteAddress}:${socket.remotePort}`);
+        logger.info(`New connection from ${socket.remoteAddress}:${socket.remotePort}`);
 
         const session = new FCastSession(socket, (data) => socket.write(data));
         session.bindEvents(this.emitter);
-        this.sessions.push(session);
-
-        const connectionId = uuidv4();
-        let heartbeatRetries = 0;
-        socket.setTimeout(TcpListenerService.TIMEOUT);
-        socket.on('timeout', () => {
-            try {
-                if (heartbeatRetries > 3) {
-                    Main.logger.warn(`Could not ping device ${socket.remoteAddress}:${socket.remotePort}. Disconnecting...`);
-                    socket.destroy();
-                }
-
-                heartbeatRetries += 1;
-                session.send(Opcode.Ping);
-            } catch (e) {
-                Main.logger.warn(`Error while pinging sender device ${socket.remoteAddress}:${socket.remotePort}.`, e);
-                socket.destroy();
-            }
-        });
+        this.sessionMap.set(session.sessionId, session);
 
         socket.on("error", (err) => {
-            Main.logger.warn(`Error from ${socket.remoteAddress}:${socket.remotePort}.`, err);
-            socket.destroy();
+            logger.warn(`Error from ${socket.remoteAddress}:${socket.remotePort}.`, err);
+            this.disconnect(session.sessionId);
         });
 
         socket.on("data", buffer => {
             try {
-                heartbeatRetries = 0;
                 session.processBytes(buffer);
             } catch (e) {
-                Main.logger.warn(`Error while handling packet from ${socket.remoteAddress}:${socket.remotePort}.`, e);
+                logger.warn(`Error while handling packet from ${socket.remoteAddress}:${socket.remotePort}.`, e);
                 socket.end();
             }
         });
 
         socket.on("close", () => {
-            const index = this.sessions.indexOf(session);
-            if (index != -1) {
-                this.sessions.splice(index, 1);
-            }
-            this.emitter.emit('disconnect', { id: connectionId, type: 'tcp', data: { address: socket.remoteAddress, port: socket.remotePort }});
-            this.emitter.removeListener('ping', pingListener);
+            this.sessionMap.delete(session.sessionId);
+            this.emitter.emit('disconnect', { sessionId: session.sessionId, type: 'tcp', data: { address: socket.remoteAddress, port: socket.remotePort }});
         });
 
-        this.emitter.emit('connect', { id: connectionId, type: 'tcp', data: { address: socket.remoteAddress, port: socket.remotePort }});
-        const pingListener = (message: any) => {
-            if (!message) {
-                this.emitter.emit('ping', { id: connectionId });
-            }
-        }
-        this.emitter.prependListener('ping', pingListener);
-
+        this.emitter.emit('connect', { sessionId: session.sessionId, type: 'tcp', data: { address: socket.remoteAddress, port: socket.remotePort }});
         try {
-            Main.logger.info('Sending version');
-            session.send(Opcode.Version, {version: 2});
+            logger.info('Sending version');
+            session.send(Opcode.Version, new VersionMessage(PROTOCOL_VERSION));
         } catch (e) {
-            Main.logger.info('Failed to send version', e);
+            logger.info('Failed to send version', e);
         }
     }
 }
