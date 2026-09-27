@@ -293,7 +293,7 @@ export class MediaSession {
         this.listener.send(Opcode.PlayUpdate, new PlayUpdateMessage(Date.now(), loaded.message));
         const source = this.loadSourceOf(loaded);
         if (source) {
-            this.listener.sendV4(encodeLoadSource(source), { exclude: origin ? origin.sessionId : undefined });
+            this.listener.sendV4(() => encodeLoadSource(source), { exclude: origin ? origin.sessionId : undefined });
         }
     }
 
@@ -407,7 +407,7 @@ export class MediaSession {
             // Chosen on the TV or by autoplay: every v4 sender hears about it.
             queue.index = index;
             this.resetItemState();
-            this.listener.sendV4(encodeQueueItemSelected(index));
+            this.listener.sendV4(() => encodeQueueItemSelected(index));
         }
 
         const item = queue.items[index];
@@ -464,7 +464,7 @@ export class MediaSession {
 
         queue.index = index;
         this.resetItemState();
-        this.listener.sendV4(encodeQueueItemSelected(position), { exclude: origin.sessionId });
+        this.listener.sendV4(() => encodeQueueItemSelected(position), { exclude: origin.sessionId });
         this.host.page('setplaylistitem', new SetPlaylistItemMessage(index));
     }
 
@@ -490,7 +490,7 @@ export class MediaSession {
         queue.items.splice(index, 0, item);
         this.dropMediaCache();
 
-        this.listener.sendV4(encodeQueueInsert(item, position), { exclude: origin.sessionId });
+        this.listener.sendV4(() => encodeQueueInsert(item, position), { exclude: origin.sessionId });
         this.host.page('queue_update', this.queueUpdate());
     }
 
@@ -516,7 +516,7 @@ export class MediaSession {
         queue.items.splice(index, 1);
         this.dropMediaCache();
 
-        this.listener.sendV4(encodeQueueRemove(position), { exclude: origin.sessionId });
+        this.listener.sendV4(() => encodeQueueRemove(position), { exclude: origin.sessionId });
         this.host.page('queue_update', this.queueUpdate());
     }
 
@@ -573,7 +573,7 @@ export class MediaSession {
     // Stops playback. `origin` is the sender that asked (not sent a `StopPlayback` relay), or
     // null when stopped on the TV.
     stop(origin: PacketOrigin | null) {
-        this.listener.sendV4(encodeStopPlayback(), { exclude: origin ? origin.sessionId : undefined });
+        this.listener.sendV4(() => encodeStopPlayback(), { exclude: origin ? origin.sessionId : undefined });
 
         const wasLoaded = this.loaded !== null;
         this.loaded = null;
@@ -674,7 +674,10 @@ export class MediaSession {
         const changed = !sameTracks(this.tracks, report);
         this.tracks = report;
         if (changed) {
-            this.trackMessages().forEach((message) => this.listener.sendV4(message));
+            this.listener.sendV4(() => encodeTracksAvailable(report.tracks));
+            this.listener.sendV4(() => encodeChangeTrack(report.selected.video, 'video'));
+            this.listener.sendV4(() => encodeChangeTrack(report.selected.audio, 'audio'));
+            this.listener.sendV4(() => encodeChangeTrack(report.selected.subtitle, 'subtitle'));
         }
     }
 

@@ -61,7 +61,11 @@ npx eslint src service test
 Runtime constraints: the service bundle must parse on older TV Node versions, so dependencies are
 compiled to ES2018 and memfs is pinned to 4.17.2 (newer versions contain BigInt literals). v4 needs
 Node 12+ (TLS 1.3); `v4UnsupportedReason()` turns it off otherwise, and then nothing may advertise
-`fp` or version 4. After a v4 upgrade, a session must only send Flatbuf/Ping/Pong.
+`fp` or version 4, and nothing may build v4 messages (FlatBuffers needs `TextEncoder` and `BigInt`).
+After a v4 upgrade, a session must only send Flatbuf/Ping/Pong. Newer Node APIs break on TVs: a
+Tizen 6.5 projector's service could not send a single packet because of Buffer's `writeUint32LE`
+spelling (Node 12.19+; lint now bans those spellings). The dev container's Node is much newer, so
+run the service on old releases from nodejs.org (8.17, 10.24, 12.18) before trusting a change.
 
 Interop testing (not in the repo): upstream's workspace can't be built here, because its git deps
 live on gitlab.futo.org. Instead, copy `senders/terminal` into the scratchpad as a standalone crate

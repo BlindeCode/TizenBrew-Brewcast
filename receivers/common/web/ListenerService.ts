@@ -48,14 +48,18 @@ export abstract class ListenerService {
     }
 
     // Sends a v4 message to v4 sessions: all of them, only one (`only`), or all but the one that
-    // made the request being relayed (`exclude`).
-    public sendV4(data: Uint8Array, options: { only?: string, exclude?: string } = {}) {
-        for (const session of this.sessionMap.values()) {
-            if (!session.isV4 || (options.only !== undefined && session.sessionId !== options.only) ||
-                (options.exclude !== undefined && session.sessionId === options.exclude)) {
-                continue;
-            }
+    // made the request being relayed (`exclude`). The message is only built when a session will
+    // get it: runtimes without v4 can't encode v4 messages (no TextEncoder or BigInt).
+    public sendV4(message: () => Uint8Array, options: { only?: string, exclude?: string } = {}) {
+        const targets = [...this.sessionMap.values()].filter((session) => session.isV4 &&
+            (options.only === undefined || session.sessionId === options.only) &&
+            (options.exclude === undefined || session.sessionId !== options.exclude));
+        if (targets.length === 0) {
+            return;
+        }
 
+        const data = message();
+        for (const session of targets) {
             try {
                 session.sendV4Message(data);
             } catch (e) {
@@ -137,7 +141,8 @@ export abstract class ListenerService {
         let isSubscribed = false;
 
         if (this.eventSubscribers.has(sessionId)) {
-            for (const e of this.eventSubscribers.get(sessionId).values()) {
+            // Not `.values()`: arrays only have it since Node 10.9.
+            for (const e of this.eventSubscribers.get(sessionId)) {
                 if (e.type === event.type) {
                     if (e.type === EventType.KeyDown.valueOf() || e.type === EventType.KeyUp.valueOf()) {
                         const subscribeEvent = e.type === EventType.KeyDown.valueOf() ? e as KeyDownEvent : e as KeyUpEvent;

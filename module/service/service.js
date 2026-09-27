@@ -15533,7 +15533,7 @@ class StatWatcher extends events_1.EventEmitter {
     start(path, persistent = true, interval = 5007) {
         this.filename = (0, util_1.pathToFilename)(path);
         this.setTimeout = persistent
-            ? setTimeout.bind(typeof globalThis !== 'undefined' ? globalThis : global)
+            ? setTimeout.bind(typeof globalThis !== 'undefined' ? globalThis : __webpack_require__.g)
             : setTimeoutUnref_1.default;
         this.interval = interval;
         this.prev = this.vol.statSync(this.filename);
@@ -16124,7 +16124,7 @@ module.exports = require("dgram");
 /***/ }),
 
 /***/ 7204:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
 
 "use strict";
 
@@ -16134,7 +16134,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
  * only in Node's environment it will "unref" its macro task.
  */
 function setTimeoutUnref(callback, time, args) {
-    const ref = setTimeout.apply(typeof globalThis !== 'undefined' ? globalThis : global, arguments);
+    const ref = setTimeout.apply(typeof globalThis !== 'undefined' ? globalThis : __webpack_require__.g, arguments);
     if (ref && typeof ref === 'object' && typeof ref.unref === 'function')
         ref.unref();
     return ref;
@@ -16582,7 +16582,7 @@ class MediaSession {
         this.listener.send(Packets_1.Opcode.PlayUpdate, new Packets_1.PlayUpdateMessage(Date.now(), loaded.message));
         const source = this.loadSourceOf(loaded);
         if (source) {
-            this.listener.sendV4((0, Codec_1.encodeLoadSource)(source), { exclude: origin ? origin.sessionId : undefined });
+            this.listener.sendV4(() => (0, Codec_1.encodeLoadSource)(source), { exclude: origin ? origin.sessionId : undefined });
         }
     }
     loadSourceOf(loaded) {
@@ -16682,7 +16682,7 @@ class MediaSession {
             // Chosen on the TV or by autoplay: every v4 sender hears about it.
             queue.index = index;
             this.resetItemState();
-            this.listener.sendV4((0, Codec_1.encodeQueueItemSelected)(index));
+            this.listener.sendV4(() => (0, Codec_1.encodeQueueItemSelected)(index));
         }
         const item = queue.items[index];
         this.listener.send(Packets_1.Opcode.PlayUpdate, new Packets_1.PlayUpdateMessage(Date.now(), playMessageFromItem(item)));
@@ -16732,7 +16732,7 @@ class MediaSession {
         }
         queue.index = index;
         this.resetItemState();
-        this.listener.sendV4((0, Codec_1.encodeQueueItemSelected)(position), { exclude: origin.sessionId });
+        this.listener.sendV4(() => (0, Codec_1.encodeQueueItemSelected)(position), { exclude: origin.sessionId });
         this.host.page('setplaylistitem', new Packets_1.SetPlaylistItemMessage(index));
     }
     queueInsert(item, position, origin) {
@@ -16754,7 +16754,7 @@ class MediaSession {
         }
         queue.items.splice(index, 0, item);
         this.dropMediaCache();
-        this.listener.sendV4((0, Codec_1.encodeQueueInsert)(item, position), { exclude: origin.sessionId });
+        this.listener.sendV4(() => (0, Codec_1.encodeQueueInsert)(item, position), { exclude: origin.sessionId });
         this.host.page('queue_update', this.queueUpdate());
     }
     queueRemove(position, origin) {
@@ -16776,7 +16776,7 @@ class MediaSession {
         }
         queue.items.splice(index, 1);
         this.dropMediaCache();
-        this.listener.sendV4((0, Codec_1.encodeQueueRemove)(position), { exclude: origin.sessionId });
+        this.listener.sendV4(() => (0, Codec_1.encodeQueueRemove)(position), { exclude: origin.sessionId });
         this.host.page('queue_update', this.queueUpdate());
     }
     // v3 `SetPlaylistItem`.
@@ -16824,7 +16824,7 @@ class MediaSession {
     // Stops playback. `origin` is the sender that asked (not sent a `StopPlayback` relay), or
     // null when stopped on the TV.
     stop(origin) {
-        this.listener.sendV4((0, Codec_1.encodeStopPlayback)(), { exclude: origin ? origin.sessionId : undefined });
+        this.listener.sendV4(() => (0, Codec_1.encodeStopPlayback)(), { exclude: origin ? origin.sessionId : undefined });
         const wasLoaded = this.loaded !== null;
         this.loaded = null;
         this.pendingLoadId = 0;
@@ -16910,7 +16910,10 @@ class MediaSession {
         const changed = !sameTracks(this.tracks, report);
         this.tracks = report;
         if (changed) {
-            this.trackMessages().forEach((message) => this.listener.sendV4(message));
+            this.listener.sendV4(() => (0, Codec_1.encodeTracksAvailable)(report.tracks));
+            this.listener.sendV4(() => (0, Codec_1.encodeChangeTrack)(report.selected.video, 'video'));
+            this.listener.sendV4(() => (0, Codec_1.encodeChangeTrack)(report.selected.audio, 'audio'));
+            this.listener.sendV4(() => (0, Codec_1.encodeChangeTrack)(report.selected.subtitle, 'subtitle'));
         }
     }
     changeTrack(type, id, origin) {
@@ -17829,13 +17832,17 @@ class ListenerService {
         }
     }
     // Sends a v4 message to v4 sessions: all of them, only one (`only`), or all but the one that
-    // made the request being relayed (`exclude`).
-    sendV4(data, options = {}) {
-        for (const session of this.sessionMap.values()) {
-            if (!session.isV4 || (options.only !== undefined && session.sessionId !== options.only) ||
-                (options.exclude !== undefined && session.sessionId === options.exclude)) {
-                continue;
-            }
+    // made the request being relayed (`exclude`). The message is only built when a session will
+    // get it: runtimes without v4 can't encode v4 messages (no TextEncoder or BigInt).
+    sendV4(message, options = {}) {
+        const targets = [...this.sessionMap.values()].filter((session) => session.isV4 &&
+            (options.only === undefined || session.sessionId === options.only) &&
+            (options.exclude === undefined || session.sessionId !== options.exclude));
+        if (targets.length === 0) {
+            return;
+        }
+        const data = message();
+        for (const session of targets) {
             try {
                 session.sendV4Message(data);
             }
@@ -17903,7 +17910,8 @@ class ListenerService {
     isSubscribedToEvent(sessionId, event) {
         let isSubscribed = false;
         if (this.eventSubscribers.has(sessionId)) {
-            for (const e of this.eventSubscribers.get(sessionId).values()) {
+            // Not `.values()`: arrays only have it since Node 10.9.
+            for (const e of this.eventSubscribers.get(sessionId)) {
                 if (e.type === event.type) {
                     if (e.type === Packets_1.EventType.KeyDown.valueOf() || e.type === Packets_1.EventType.KeyUp.valueOf()) {
                         const subscribeEvent = e.type === Packets_1.EventType.KeyDown.valueOf() ? e : e;
@@ -20115,13 +20123,9 @@ class FCastSession {
     writePacket(opcode, data) {
         const size = 1 + data.length;
         const header = Buffer.alloc(4 + 1);
-        // webOS 22 and earlier node versions do not support `writeUint32LE` despite nodejs stating
-        // it should be supported in those versions... `writeUIntLE` however works instead.
-        // @ts-ignore
-        if (false) {}
-        else {
-            header.writeUint32LE(size, 0);
-        }
+        // Not `writeUint32LE`: that spelling only exists since Node 12.19/14.9, and TV runtimes are
+        // older (upstream hit this on webOS 22). `writeUInt32LE` is in every Node version.
+        header.writeUInt32LE(size, 0);
         header[4] = opcode;
         let packet;
         if (data.length > 0) {
@@ -20459,8 +20463,12 @@ class FCastSession {
             this.writePacket(Packets_1.Opcode.Flatbuf, data);
         }
     }
+    // A no-op for v2/v3 senders, which have no equivalent. (Runtimes without v4 can't even build
+    // the message.)
     sendV4Error(kind, packetNumber) {
-        this.sendV4Message((0, Codec_1.encodeError)(kind, packetNumber));
+        if (this.isV4) {
+            this.sendV4Message((0, Codec_1.encodeError)(kind, packetNumber));
+        }
     }
     // Playback states the v2/v3 model can't express (Buffering, Ended).
     sendV4PlaybackState(state) {
@@ -20849,7 +20857,7 @@ function makeNodeError(Base) {
         }
     };
 }
-const g = typeof globalThis !== 'undefined' ? globalThis : global;
+const g = typeof globalThis !== 'undefined' ? globalThis : __webpack_require__.g;
 class AssertionError extends g.Error {
     constructor(options) {
         if (typeof options !== 'object' || options === null) {
@@ -21180,6 +21188,18 @@ exports.bufferFrom = bufferFrom;
 /******/ 				}
 /******/ 			}
 /******/ 		};
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/global */
+/******/ 	(() => {
+/******/ 		__webpack_require__.g = (function() {
+/******/ 			if (typeof globalThis === 'object') return globalThis;
+/******/ 			try {
+/******/ 				return this || new Function('return this')();
+/******/ 			} catch (e) {
+/******/ 				if (typeof window === 'object') return window;
+/******/ 			}
+/******/ 		})();
 /******/ 	})();
 /******/ 	
 /******/ 	/* webpack/runtime/hasOwnProperty shorthand */
