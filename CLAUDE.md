@@ -5,34 +5,58 @@ BrewCast is an FCast-compatible receiver for Samsung Tizen TVs, delivered as a
 `BlindeCode/tizenbrew-brewcast` (renamed from `TizenBrew-FcastReceiver`), and TizenBrew users will
 install it as `gh/BlindeCode/tizenbrew-brewcast`.
 
-The code started as FUTO's deleted Tizen receiver from `futo-org/fcast` (MIT). It doesn't run as a
-TizenBrew module yet. Read `docs/gap-analysis.md` before planning new work.
+The code started as FUTO's deleted Tizen receiver from `futo-org/fcast` (MIT). It speaks FCast
+protocol v4 (with v2/v3 fallback) and works end to end in local tests, but hasn't been tried on a
+TV or published yet. `docs/gap-analysis.md` has the status and what's still open.
 
-## Layout
+## How it fits together
 
-- `receivers/tizen/`: Tizen app. `src/` is the web UI (main and player pages), `lib/` holds Tizen
-  helpers, `FCastReceiverService/` is upstream's C# .NET background service, and there's a webpack
-  config and scripts.
-- `receivers/common/`: shared TS (`web/`) and assets from upstream's receivers. It has the protocol
-  (`Packets.ts`, `FCastSession.ts`), the TCP listener, the player and the UI.
-- `docs/`: project notes.
+TizenBrew serves the module's pages from `http://127.0.0.1:8081` and runs `serviceFile` in its own
+Node service. The root `package.json` is the TizenBrew module manifest.
 
-Keep the `receivers/{tizen,common}` layout. `webpack.config.js` and `tsconfig.json` import shared
-code via `../common/web` (alias `common/*`).
+- **Service** (`receivers/tizen/service/`, bundled to `dist/service/service.js`): TCP listener on
+  46899, mDNS, protocol sessions, play preparation. `Main.ts` also exports the getters that shared
+  code imports as `src/Main`. `Ipc.ts` is the page channel: SSE + POST on `127.0.0.1:46897`.
+  `Platform.ts` wraps the TV: device name, storage in `/home/owner/share`, and opening the module via
+  TizenBrew AppControl.
+- **Pages** (`receivers/tizen/src/`): `main` (QR code, connection info) and `player`, with the
+  renderers from `receivers/common/web`. `ServiceClient.ts` talks to the service. Pages switch with
+  `location.replace` and hand the play over in `sessionStorage` (`playData`).
+- **Protocol** (`receivers/common/web/`): `FCastSession.ts` and `TcpListenerService.ts` handle
+  v1-v4. v4 lives in `v4/`: `Codec.ts` translates v4 FlatBuffers to and from the v2/v3 message model
+  that everything else uses, and `Certificate.ts` makes the self-signed ECDSA P-256 identity whose
+  SPKI hash is the `fp` fingerprint. `v4/generated/` is flatc output, so don't edit it; run
+  `scripts/generate-v4.sh` with flatc at the `flatbuffers` npm version. `DiscoveryService.ts` is a
+  small mDNS responder on `multicast-dns`.
+- `receivers/tizen/FCastReceiverService/` (C#) and the `.wgt` scripts are upstream's old path. The
+  pages no longer speak MessagePort, so a `.wgt` built from them won't work with that service.
+
+Keep the `receivers/{tizen,common}` layout. The webpack and tsconfig files import shared code via
+`../common/web` (alias `common/*`). Node packages used from `receivers/common` go through the
+`modules/*` alias, because `common/` has no `node_modules`.
 
 ## Commands
 
 ```bash
 cd receivers/tizen
-npm ci          # the SessionStart hook runs npm install in cloud sessions
-npm run build   # webpack -> dist/, copied to FCastReceiver/dist/ on success
-npx eslint src  # lint (6 pre-existing unused-var/prefer-const errors from upstream)
+npm ci                   # the SessionStart hook runs npm install in cloud sessions
+npm test                 # jest: v4 certificate, codec and socket-level session tests
+npm run build            # webpack -> dist/{main_window,player,assets,service}
+npm run build:module     # build + copy into <repo>/module/ (what TizenBrew loads)
+npx eslint src service test
+# Shared files: run eslint from receivers/ with -c tizen/eslint.config.mjs
 ```
 
-`npm run build` currently fails. `src/*/Preload.ts` import `common/main/Preload` and
-`common/player/Preload`, which upstream removed in b1850e3. There are no tests yet (`npm test` is
-upstream's placeholder). The signed `.wgt` path (`scripts/build.sh`, Tizen Studio, .NET) can't run in
-cloud sessions.
+Runtime constraints: the service bundle must parse on older TV Node versions, so dependencies are
+compiled to ES2018 and memfs is pinned to 4.17.2 (newer versions contain BigInt literals). v4 needs
+Node 12+ (TLS 1.3); `v4UnsupportedReason()` turns it off otherwise, and then nothing may advertise
+`fp` or version 4. After a v4 upgrade, a session must only send Flatbuf/Ping/Pong.
+
+Interop testing (not in the repo): upstream's workspace can't be built here, because its git deps
+live on gitlab.futo.org. Instead, copy `senders/terminal` into the scratchpad as a standalone crate
+that points at `sdk/sender/fcast-sender-sdk`, and add a `--fp` flag. Run the service with
+`BREWCAST_DATA_DIR=<dir> node <sandbox> module/service/service.js`, where the sandbox mimics
+TizenBrew's `serviceLauncher.js` (`vm.runInContext`).
 
 ## Upstream reference: `../fcast-upstream` is READ-ONLY
 

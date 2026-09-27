@@ -2,8 +2,10 @@
 
 > [!NOTE]
 > This is upstream FCast's build guide for the signed `.wgt` package, which bundles the web UI
-> with the C# background service. It's kept for reference. BrewCast targets TizenBrew instead;
-> see the [root README](../../README.md) and [docs/gap-analysis.md](../../docs/gap-analysis.md).
+> with the C# background service. It's kept for reference only: BrewCast targets TizenBrew, and its
+> pages now talk to the Node service in `service/` rather than to the C# service, so a `.wgt` built
+> this way won't work. See the [root README](../../README.md) and
+> [docs/gap-analysis.md](../../docs/gap-analysis.md).
 
 The FCast Tizen OS Receiver is split into two separate projects `FCastReceiver` for frontend UI and `FCastReceiverService` for the background network service. The WebOS receiver is supported running on TV devices from Tizen OS 5.0 and later.
 

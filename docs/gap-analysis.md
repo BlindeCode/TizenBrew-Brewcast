@@ -8,6 +8,45 @@ Written 2026-09-27 from these sources:
 Paths without a prefix are relative to this repo. `upstream:` paths are in `../fcast-upstream`, and
 `tizenbrew:` paths are in the TizenBrew repo.
 
+## Status (updated 2026-09-27)
+
+What follows the status section is the original analysis, unchanged. Since it was written:
+
+| Work order step ([§6](#6-proposed-work-order)) | State |
+|---|---|
+| 1. Fix the web build | **Done.** Upstream's lint errors are fixed too. The pages were also out of date with the shared renderers, so they now follow upstream's webOS pages. |
+| 2. Probe module on a TV | **Not done.** The §5 questions are still open (see below). |
+| 3. Node service | **Done** (`receivers/tizen/service/`), ported from the webOS service onto `common/web` at `5c79300`. |
+| 4. IPC and launch | **Done:** SSE + POST on `127.0.0.1:46897`. Launching through TizenBrew AppControl is implemented but unverified. |
+| 5. Discovery | **Done**, using `multicast-dns`, because `@futo/mdns-js` is only on FUTO's registry. TXT carries `v` and `fp`. |
+| 6. Packaging | **Partly done.** The root `package.json` manifest and `npm run build:module` exist. How `module/` gets published (committed, CI branch, npm) is undecided. |
+| 7. Cleanup of the C# / `.wgt` path | **Not done.** That path is now stale: the pages no longer speak MessagePort. |
+| 8. Protocol v4 | **Done** for everything URL-based (see below). |
+
+**Protocol v4 coverage.**
+- *Implemented:* the TLS 1.3 upgrade with a persisted ECDSA P-256 key and `fp`, the introductions,
+  Load (single item and queue), progress/state/volume/speed both ways, QueueItemSelected (index),
+  SetProgressUpdateInterval, Error replies with packet numbers, relaying a load to the *other*
+  senders, and the state a mid-playback joiner receives.
+- *Not implemented:* FCompanion (sender-served media; `CompanionHelloRequest` is ignored, so
+  companion loads stay pending in the sender), QueueInsert/QueueRemove, TracksAvailable/ChangeTrack,
+  AddSubtitleSource, and mirroring. These get `InvalidPayloadType` errors.
+- *Protocol limitation:* a v4 receiver can't be reached by a sender that connects by IP without
+  knowing `fp` (the SDK refuses to upgrade). That's inherent to the protocol, and the same for
+  FUTO's desktop receiver.
+
+**How it was verified (in the dev container, not on a TV).**
+- 27 jest tests pass.
+- Upstream's Rust sender SDK connects over v4, with the fingerprint given directly and via mDNS
+  discovery, and drives every playback control.
+- Upstream's Node v4 handshake PoC passes, and rejects a wrong fingerprint.
+- The built pages in Chromium, against the service running in a copy of TizenBrew's service
+  sandbox, play a cast and report progress back to senders.
+
+**Still unknown until tested on a TV:** everything in [§5](#5-unknowns-that-need-a-real-tv).
+Especially the Node version (v4 needs Node 12+; the bundle parses as ES2018), whether UDP 5353 and
+TCP 46899 are usable from TizenBrew's service, and whether AppControl launching works.
+
 ## Summary
 
 - **What we have.** A Tizen web UI (main page with a QR code, plus an HTML5 player using hls.js and
