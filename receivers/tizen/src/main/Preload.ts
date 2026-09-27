@@ -1,4 +1,4 @@
-import { preloadData } from 'common/main/Preload';
+import { preloadData } from 'common/Preload';
 import { toast, ToastIcon } from 'common/components/Toast';
 import * as tizen from 'tizen-common-web';
 import { network } from 'tizen-tv-webapis';

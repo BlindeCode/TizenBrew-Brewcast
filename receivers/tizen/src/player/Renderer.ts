@@ -350,11 +350,14 @@ export function targetKeyUpEventListener(event: KeyboardEvent): { handledCase: b
 };
 
 if (window.tizenOSAPI.pendingPlay !== null) {
-    if (window.tizenOSAPI.pendingPlay.rendererEvent === 'play-playlist') {
-        onPlayPlaylist(null, window.tizenOSAPI.pendingPlay.rendererMessage);
+    const pendingPlay = window.tizenOSAPI.pendingPlay;
+    const playerVolume = pendingPlay.playerVolume !== undefined ? pendingPlay.playerVolume : null;
+
+    if (pendingPlay.rendererEvent === 'play-playlist') {
+        onPlayPlaylist(null, pendingPlay.rendererMessage, playerVolume);
     }
     else {
-        onPlay(null, window.tizenOSAPI.pendingPlay.rendererMessage);
+        onPlay(null, pendingPlay.rendererMessage, pendingPlay.proxyUrl, playerVolume);
     }
 }
 

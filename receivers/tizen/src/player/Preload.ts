@@ -1,4 +1,4 @@
-import { preloadData } from 'common/player/Preload';
+import { preloadData } from 'common/Preload';
 import { Opcode, PlaybackErrorMessage, PlaybackUpdateMessage, VolumeUpdateMessage } from 'common/Packets';
 import { toast, ToastIcon } from 'common/components/Toast';
 import * as tizen from 'tizen-common-web';
