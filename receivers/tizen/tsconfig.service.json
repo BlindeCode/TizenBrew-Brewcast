@@ -1,0 +1,18 @@
+{
+  // Type-checks the Node service (service/) and the backend code it pulls from ../common/web.
+  // Inside the service bundle, `src/*` refers to service/ (common code imports `src/Main`).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2018",
+    "module": "CommonJS",
+    "lib": ["ES2018", "ES2020.BigInt", "DOM"],
+    "types": ["node", "jest"],
+    "paths": {
+      "src/*": ["./service/*"],
+      "lib/*": ["./lib/*"],
+      "modules/*": ["./node_modules/*"],
+      "common/*": ["../common/web/*"]
+    }
+  },
+  "include": ["service/**/*.ts"]
+}

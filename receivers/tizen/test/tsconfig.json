@@ -1,0 +1,14 @@
+{
+  // Tests run the backend code against test/support/Main.ts instead of the real service entry.
+  "extends": "../tsconfig.service.json",
+  "compilerOptions": {
+    "baseUrl": "..",
+    "paths": {
+      "src/Main": ["./test/support/Main.ts"],
+      "src/*": ["./service/*"],
+      "modules/*": ["./node_modules/*"],
+      "common/*": ["../common/web/*"]
+    }
+  },
+  "include": ["**/*.ts"]
+}
