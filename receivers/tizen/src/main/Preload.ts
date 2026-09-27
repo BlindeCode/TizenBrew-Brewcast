@@ -1,6 +1,7 @@
 import { preloadData } from 'common/Preload';
 import { EventMessage } from 'common/Packets';
 import { ServiceClient } from 'src/ServiceClient';
+import { probeCapabilities } from 'src/Capabilities';
 
 const service = new ServiceClient();
 
@@ -14,9 +15,10 @@ service.on('connect', (message) => preloadData.onConnectCb(null, message));
 service.on('disconnect', (message) => preloadData.onDisconnectCb(null, message));
 service.on('event_subscribed_keys_update', (keys) => preloadData.onEventSubscribedKeysUpdate(keys));
 
-service.on('play', (playInfo) => {
+// Something was cast (or was already playing when this page opened): show it.
+service.on('load', (playInfo) => {
     sessionStorage.setItem('playData', JSON.stringify(playInfo));
-    location.replace('../player/index.html');
+    location.replace(`../${playInfo.contentViewer}/index.html`);
 });
 
 preloadData.sendEventCb = (message: EventMessage) => {
@@ -27,4 +29,11 @@ window.targetAPI.getSessions(() => service.call('get_sessions'));
 window.targetAPI.initializeSubscribedKeys(() => service.call('get_subscribed_keys'));
 
 // Start receiving once renderer.js (end of <body>) has registered its callbacks.
-document.addEventListener('DOMContentLoaded', () => service.connect());
+document.addEventListener('DOMContentLoaded', () => {
+    service.connect();
+    try {
+        service.call('report_capabilities', probeCapabilities()).catch((e) => console.error('Main: report_capabilities failed', e));
+    } catch (e) {
+        console.error('Main: could not probe capabilities', e);
+    }
+});

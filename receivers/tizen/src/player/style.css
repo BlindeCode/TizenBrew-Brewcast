@@ -180,3 +180,8 @@
 #captions {
     display: none;
 }
+
+/* The idle and loading screens show BrewCast's icon, not the FCast logo (FUTO trademark policy). */
+#title-icon {
+    background-image: url(../assets/icons/brewcast.svg);
+}

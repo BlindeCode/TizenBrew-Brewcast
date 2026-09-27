@@ -2,14 +2,14 @@ import * as tls from 'tls';
 import { TcpListenerService } from 'common/TcpListenerService';
 import { V4Config } from 'common/FCastSession';
 import { loadOrCreateV4Identity } from 'common/v4/Certificate';
-import { encodeLoad, encodeSenderIntroduction, ErrorKind, Message, V4PlaybackState } from 'common/v4/Codec';
+import { encodeLoad, encodeSenderIntroduction, encodeSetProgressUpdateInterval, ErrorKind, Message, V4PlaybackState } from 'common/v4/Codec';
 import {
     Error as ErrorMessage, Load, MediaItem as V4MediaItem, PlaybackStateChanged, ProgressChanged, ReceiverIntroduction,
     SpeedChanged, VolumeChanged,
 } from 'common/v4/generated/fcast/v4';
 import * as flatbuffers from 'flatbuffers';
 import { Packet, VolumeChanged as VolumeChangedTable } from 'common/v4/generated/fcast/v4';
-import { Opcode, PlaybackState, PlaybackUpdateMessage, PlayMessage, PlayUpdateMessage, VolumeUpdateMessage } from 'common/Packets';
+import { Opcode, PlaybackState, PlaybackUpdateMessage, PlayMessage, VolumeUpdateMessage } from 'common/Packets';
 import { connectPlain, connectV4, flatPacket, PacketStream, spkiFingerprintOf } from '../support/TestSender';
 import { testState } from '../support/Main';
 
@@ -61,6 +61,7 @@ describe('protocol sessions', () => {
         testState.playMessage = null;
         testState.playbackUpdate = null;
         testState.playerVolume = 1;
+        testState.joinMessages = [];
     });
 
     afterEach(() => {
@@ -124,21 +125,36 @@ describe('protocol sessions', () => {
         expect(flatPacket(volume).payload(new VolumeChanged()).volume()).toBeCloseTo(0.75);
     });
 
-    test('a load is relayed to the other senders without headers, not echoed back', async () => {
+    test('progress goes out at the interval the sender asked for, extrapolated between updates', async () => {
         await startListener();
-        const first = await v4Sender();
-        const second = await v4Sender();
+        const stream = await v4Sender();
+        stream.send(Opcode.Flatbuf, encodeSetProgressUpdateInterval(200));
+        await new Promise((resolve) => setTimeout(resolve, 100));
 
-        // What the service does with a play request: relay it as a PlayUpdate.
-        listener.emitter.once('play', (message: PlayMessage) => listener.send(Opcode.PlayUpdate, new PlayUpdateMessage(Date.now(), message)));
-        first.send(Opcode.Flatbuf, encodeLoad(new PlayMessage('video/mp4', 'https://example.com/v.mp4', null, null, null, null, { Cookie: 'x' }), true));
+        listener.send(Opcode.PlaybackUpdate, new PlaybackUpdateMessage(Date.now(), PlaybackState.Playing, 10, 60, 2));
+        const positions: number[] = [];
+        const until = Date.now() + 1100;
+        while (Date.now() < until) {
+            const packet = flatPacket(await stream.nextOf(Opcode.Flatbuf));
+            if (packet.payloadType() === Message.ProgressChanged) {
+                positions.push(Number(packet.payload(new ProgressChanged()).position().micros()) / 1000000);
+            }
+        }
 
-        const item: V4MediaItem = (await expectMessage(second, Message.Load)).payload(new Load()).source(new V4MediaItem());
-        expect(item.sourceUrl()).toBe('https://example.com/v.mp4');
-        expect(item.headersLength()).toBe(0);
+        // The first report, then one every 200ms, moving at twice real time.
+        expect(positions.length).toBeGreaterThanOrEqual(5);
+        expect(positions[0]).toBe(10);
+        expect(positions[positions.length - 1]).toBeGreaterThan(11.5);
+        expect(positions[positions.length - 1]).toBeLessThan(12.5);
 
-        first.send(Opcode.Ping);
-        expect((await first.next()).opcode).toBe(Opcode.Pong);
+        // Paused: the timer stops.
+        listener.send(Opcode.PlaybackUpdate, new PlaybackUpdateMessage(Date.now(), PlaybackState.Paused, 12, 60, 2));
+        let packet = flatPacket(await stream.nextOf(Opcode.Flatbuf));
+        while (packet.payloadType() === Message.ProgressChanged) {
+            packet = flatPacket(await stream.nextOf(Opcode.Flatbuf));
+        }
+        expect(packet.payload(new PlaybackStateChanged()).state()).toBe(V4PlaybackState.Paused);
+        await expect(stream.nextOf(Opcode.Flatbuf, 500)).rejects.toThrow();
     });
 
     test('out-of-range values are clamped and reported with the packet number', async () => {
@@ -166,7 +182,7 @@ describe('protocol sessions', () => {
 
     test('a sender joining mid-playback gets the current load and state', async () => {
         await startListener();
-        testState.playMessage = new PlayMessage('video/mp4', 'https://example.com/now.mp4', null, null, null, null, { Cookie: 'x' });
+        testState.joinMessages = [encodeLoad(new PlayMessage('video/mp4', 'https://example.com/now.mp4', null, null, null, null, { Cookie: 'x' }))];
         testState.playbackUpdate = new PlaybackUpdateMessage(Date.now(), PlaybackState.Paused, 42, 100, 1);
         const stream = await v4Sender();
 

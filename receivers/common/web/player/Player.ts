@@ -10,7 +10,14 @@ export enum PlayerType {
     Dash,
     Hls,
     Whep,
+    // FCast v4 screen mirroring: WebRTC with the sender as the offerer, negotiated over the FCast
+    // connection (MirroringSessionDescription) instead of HTTP like WHEP.
+    Mirror,
 }
+
+export const MIRRORING_CONTAINER = 'application/x-fwebrtc';
+// Mirroring uses host candidates only, but don't wait forever for gathering to finish.
+const ICE_GATHERING_TIMEOUT_MS = 3000;
 
 export class Player {
     private player: HTMLVideoElement;
@@ -66,6 +73,10 @@ export class Player {
             };
 
             this.hlsPlayer = new Hls(config);
+        } else if (message.container === MIRRORING_CONTAINER) {
+            this.playerType = PlayerType.Mirror;
+            this.source = message.url;
+            this.peerConnection = new RTCPeerConnection({ bundlePolicy: "max-bundle" });
         } else if (message.container === 'application/x-whep') {
             this.playerType = PlayerType.Whep;
             this.source = message.url;
@@ -100,6 +111,8 @@ export class Player {
         this.player.ontimeupdate = null;
         this.player.onratechange = null;
         this.player.onvolumechange = null;
+        this.player.onwaiting = null;
+        this.player.onplaying = null;
     }
 
     public destroy() {
@@ -139,6 +152,18 @@ export class Player {
 
                 break;
             }
+            case PlayerType.Mirror: {
+                try {
+                    this.peerConnection?.close();
+                } catch (e) {
+                    logger.warn("Failed to close the mirroring connection", e);
+                }
+                this.peerConnection = null;
+                this.player.srcObject = null;
+                this.destroy_html_player();
+
+                break;
+            }
 
             default:
                 break;
@@ -171,6 +196,14 @@ export class Player {
             this.hlsPlayer.loadSource(this.playMessage.url);
             this.hlsPlayer.attachMedia(this.player);
             // hlsPlayer.subtitleDisplay = true;
+        } else if (this.playerType === PlayerType.Mirror) {
+            // Media arrives once the sender's offer is answered (answerOffer).
+            this.peerConnection.ontrack = (event) => {
+                const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
+                if (this.player.srcObject !== stream) {
+                    this.player.srcObject = stream;
+                }
+            };
         } else if (this.playerType == PlayerType.Whep) {
             const pc = this.peerConnection;
             if (pc != null) {
@@ -188,6 +221,33 @@ export class Player {
             this.player.src = this.playMessage.url;
             this.player.load();
         }
+    }
+
+    // Mirroring: answers the sender's SDP offer. ICE is non-trickle, so the answer carries all our
+    // candidates.
+    public answerOffer(sdp: string): Promise<string> {
+        const pc = this.peerConnection;
+        if (this.playerType !== PlayerType.Mirror || !pc) {
+            return Promise.reject(new Error('not a mirroring player'));
+        }
+
+        return pc.setRemoteDescription({ type: 'offer', sdp: sdp })
+            .then(() => pc.createAnswer())
+            .then((answer) => pc.setLocalDescription(answer))
+            .then(() => new Promise<void>((resolve) => {
+                if (pc.iceGatheringState === 'complete') {
+                    resolve();
+                    return;
+                }
+                const timer = setTimeout(resolve, ICE_GATHERING_TIMEOUT_MS);
+                pc.addEventListener('icegatheringstatechange', () => {
+                    if (pc.iceGatheringState === 'complete') {
+                        clearTimeout(timer);
+                        resolve();
+                    }
+                });
+            }))
+            .then(() => pc.localDescription.sdp);
     }
 
     public play() {

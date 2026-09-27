@@ -14,6 +14,9 @@ export class ServiceClient {
     private handlers: { [event: string]: EventHandler } = {};
     private failures = 0;
     private warned = false;
+    // Calls are made one at a time, so reports reach the service in the order they were made
+    // (e.g. an item's Ended state before the Idle update that follows it).
+    private queue: Promise<unknown> = Promise.resolve();
 
     on(event: string, handler: EventHandler) {
         this.handlers[event] = handler;
@@ -46,6 +49,13 @@ export class ServiceClient {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- results are JSON
     call(method: string, value: unknown = null): Promise<any> {
+        const result = this.queue.then(() => this.post(method, value));
+        this.queue = result.catch(() => undefined);
+        return result;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- results are JSON
+    private post(method: string, value: unknown): Promise<any> {
         // text/plain keeps this a "simple" cross-origin request (no CORS preflight).
         return fetch(`${SERVICE_URL}/call/${method}`, {
             method: 'POST',

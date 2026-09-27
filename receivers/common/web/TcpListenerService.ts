@@ -38,7 +38,9 @@ export class TcpListenerService extends ListenerService {
         const server = this.server;
         this.server = null;
 
+        // close() only stops accepting; the senders' connections would keep the server alive.
         server.close();
+        this.sessionMap.forEach((session) => session.socket.destroy());
     }
 
     // The bound port, or null before listening (tests start on port 0).
@@ -84,6 +86,7 @@ export class TcpListenerService extends ListenerService {
                 return;
             }
             closed = true;
+            session.closed();
             this.sessionMap.delete(session.sessionId);
             this.emitter.emit('disconnect', { sessionId: session.sessionId, type: 'tcp', data: { address: address, port: port }});
         };

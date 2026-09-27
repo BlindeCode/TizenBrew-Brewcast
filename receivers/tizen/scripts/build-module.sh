@@ -11,5 +11,5 @@ npm run build
 module="$(cd ../.. && pwd)/module"
 rm -rf "$module"
 mkdir -p "$module"
-cp -r dist/main_window dist/player dist/assets dist/service "$module/"
+cp -r dist/main_window dist/player dist/viewer dist/assets dist/service "$module/"
 echo "TizenBrew module written to $module"

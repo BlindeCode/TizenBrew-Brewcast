@@ -7,10 +7,13 @@ const logger = new Logger('Ipc', LoggerType.BACKEND);
 // (C# service) and webOS Luna bus:
 //   GET  /events        Server-Sent Events stream of service events (`event:` name, JSON `data:`)
 //   POST /call/<method> JSON request body, JSON response `{ "value": ... }` or `{ "error": ... }`
+//   other GETs          `routes`, e.g. media served by senders (FCompanion) and converted subtitles
 // Only bound to 127.0.0.1, so senders on the network can't reach it.
 export const IPC_PORT = 46897;
 
 export type IpcCallHandler = (method: string, value: unknown) => unknown | Promise<unknown>;
+// Handles a request and returns true, or returns false to let the next route try.
+export type IpcRoute = (req: http.IncomingMessage, res: http.ServerResponse) => boolean;
 
 export class IpcServer {
     private server: http.Server = null;
@@ -19,6 +22,7 @@ export class IpcServer {
 
     // Called with each new event-stream client, e.g. to replay state the page needs on load.
     public onClientConnected: (send: (event: string, value: unknown) => void) => void = null;
+    public routes: IpcRoute[] = [];
 
     constructor(private handler: IpcCallHandler) {}
 
@@ -58,8 +62,10 @@ export class IpcServer {
 
     private handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
+        // hls.js/dash.js fetch served media with XHR and need these for byte ranges.
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
 
         if (req.method === 'OPTIONS') {
             res.writeHead(204);
@@ -86,6 +92,23 @@ export class IpcServer {
                 }
             }
             return;
+        }
+
+        if (req.method === 'GET' || req.method === 'HEAD') {
+            for (const route of this.routes) {
+                try {
+                    if (route(req, res)) {
+                        return;
+                    }
+                } catch (e) {
+                    logger.error(`Route ${req.url} failed`, e);
+                    if (!res.headersSent) {
+                        res.writeHead(500);
+                    }
+                    res.end();
+                    return;
+                }
+            }
         }
 
         const match = req.method === 'POST' && req.url ? /^\/call\/([a-z_]+)$/.exec(req.url) : null;

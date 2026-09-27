@@ -1,4 +1,5 @@
-import { FCastSession } from 'common/FCastSession';
+import { FCastSession, PacketOrigin } from 'common/FCastSession';
+import { ErrorKind } from 'common/v4/Codec';
 import { Opcode, EventSubscribeObject, EventObject, EventType, KeyEvent, KeyDownEvent, KeyUpEvent } from 'common/Packets';
 import { Logger, LoggerType } from 'common/Logger';
 import { deepEqual } from 'common/UtilityBackend';
@@ -44,6 +45,37 @@ export abstract class ListenerService {
                 }
             }
         }
+    }
+
+    // Sends a v4 message to v4 sessions: all of them, only one (`only`), or all but the one that
+    // made the request being relayed (`exclude`).
+    public sendV4(data: Uint8Array, options: { only?: string, exclude?: string } = {}) {
+        for (const session of this.sessionMap.values()) {
+            if (!session.isV4 || (options.only !== undefined && session.sessionId !== options.only) ||
+                (options.exclude !== undefined && session.sessionId === options.exclude)) {
+                continue;
+            }
+
+            try {
+                session.sendV4Message(data);
+            } catch (e) {
+                logger.warn("Failed to send.", e);
+                session.close();
+            }
+        }
+    }
+
+    // Answers a v4 request with an `Error` (no-op for v2/v3 senders, which have no equivalent).
+    public sendV4Error(origin: PacketOrigin, kind: ErrorKind) {
+        this.sessionMap.get(origin.sessionId)?.sendV4Error(kind, origin.packetNumber);
+    }
+
+    public getSession(sessionId: string): FCastSession {
+        return this.sessionMap.get(sessionId);
+    }
+
+    public getV4Sessions(): FCastSession[] {
+        return [...this.sessionMap.values()].filter((session) => session.isV4);
     }
 
     public subscribeEvent(sessionId: string, event: EventSubscribeObject) {

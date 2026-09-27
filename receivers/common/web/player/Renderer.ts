@@ -74,7 +74,8 @@ let isLivePosition = false;
 let captionsBaseHeight = 0;
 let captionsContentHeight = 0;
 
-let cachedPlaylist: PlaylistContent = null;
+// v4 queues carry `autoplay`; v3 playlists always advance.
+let cachedPlaylist: PlaylistContent & { autoplay?: boolean } = null;
 let cachedPlayMediaItem: MediaItem = null;
 let cachedVolume: number = null;
 let cachedSpeed: number = 1.0;
@@ -236,7 +237,8 @@ function onPlay(_event, value: PlayMessage, proxyUrl: string = null, cachedPlaye
 
                 window.targetAPI.sendPlaybackError({
                     // @ts-ignore
-                    message: `type=${data.type}, code=${data.error.code}, message=${data.error.message}, event=${data.event}, eventMessage=${data.event?.message}`
+                    message: `type=${data.type}, code=${data.error.code}, message=${data.error.message}, event=${data.event}, eventMessage=${data.event?.message}`,
+                    kind: /download|load/i.test(`${(data.error as { message?: string }).message}`) ? 'network' : undefined,
                 });
             });
 
@@ -250,6 +252,7 @@ function onPlay(_event, value: PlayMessage, proxyUrl: string = null, cachedPlaye
             });
 
             player.dashPlayer.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => { onPlayerLoad(value); });
+            player.dashPlayer.on(dashjs.MediaPlayer.events.PLAYBACK_WAITING, () => { reportBuffering(); });
 
             player.dashPlayer.on(dashjs.MediaPlayer.events.CUE_ENTER, (e: any) => {
                 const subtitle = document.createElement("p")
@@ -289,8 +292,11 @@ function onPlay(_event, value: PlayMessage, proxyUrl: string = null, cachedPlaye
                     toast('Media playback error, please close the player and reconnect sender devices if you experience issues', ToastIcon.WARNING);
                     logger.error('HLS player error:', data);
 
+                    const status = data.response ? data.response.code : null;
                     window.targetAPI.sendPlaybackError({
-                        message: `type=${data.type}, details=${data.details}, fatal=${data.fatal}`
+                        message: `type=${data.type}, details=${data.details}, fatal=${data.fatal}`,
+                        kind: data.type === Hls.ErrorTypes.NETWORK_ERROR ? (status === 404 || status === 410 ? 'not_found' : 'network') :
+                            data.type === Hls.ErrorTypes.MEDIA_ERROR ? 'decode' : undefined,
                     });
 
                     if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
@@ -317,7 +323,7 @@ function onPlay(_event, value: PlayMessage, proxyUrl: string = null, cachedPlaye
         }
 
         // Player event handlers
-        if (player.playerType === PlayerType.Hls || player.playerType === PlayerType.Html || player.playerType === PlayerType.Whep) {
+        if (player.playerType === PlayerType.Hls || player.playerType === PlayerType.Html || player.playerType === PlayerType.Whep || player.playerType === PlayerType.Mirror) {
             videoElement.onplay = () => { mediaPlayHandler(value); };
             videoElement.onpause = () => { sendPlaybackUpdate(PlaybackState.Paused); playerCtrlStateUpdate(PlayerControlEvent.Pause); };
             videoElement.onended = () => { mediaEndHandler(); };
@@ -331,6 +337,13 @@ function onPlay(_event, value: PlayMessage, proxyUrl: string = null, cachedPlaye
             };
             // Buffering UI update when paused
             videoElement.onprogress = () => { playerCtrlStateUpdate(PlayerControlEvent.TimeUpdate); };
+            videoElement.onwaiting = () => { reportBuffering(); };
+            videoElement.onplaying = () => {
+                // Back from buffering.
+                if (playbackState === PlaybackState.Playing) {
+                    sendPlaybackUpdate(PlaybackState.Playing);
+                }
+            };
             videoElement.onratechange = () => { sendPlaybackUpdate(playbackState); };
             videoElement.onvolumechange = () => {
                 const updateVolume = videoElement.muted ? 0 : videoElement.volume;
@@ -348,8 +361,11 @@ function onPlay(_event, value: PlayMessage, proxyUrl: string = null, cachedPlaye
                 toast('Media playback error, please close the player and reconnect sender devices if you experience issues', ToastIcon.WARNING);
                 logger.error('Html player error:', { playMessage: value, videoError: videoElement.error });
 
+                const code = videoElement.error ? videoElement.error.code : 0;
                 window.targetAPI.sendPlaybackError({
-                    message: `code=${videoElement.error.code}, message=${videoElement.error.message}`
+                    message: `code=${code}, message=${videoElement.error ? videoElement.error.message : ''}`,
+                    kind: code === MediaError.MEDIA_ERR_NETWORK ? 'network' : code === MediaError.MEDIA_ERR_DECODE ? 'decode' :
+                        code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ? 'unsupported' : undefined,
                 });
             };
 
@@ -369,8 +385,50 @@ function onPlay(_event, value: PlayMessage, proxyUrl: string = null, cachedPlaye
 
         player.setAutoPlay(true);
         player.load();
+
+        if (player.playerType === PlayerType.Mirror && pendingMirroringOffer !== null) {
+            answerMirroringOffer(pendingMirroringOffer);
+        }
+        pendingMirroringOffer = null;
     }
 }
+
+// The player waits for data while it should be playing (v4 `Buffering`).
+function reportBuffering() {
+    if (playbackState === PlaybackState.Playing) {
+        window.targetAPI.sendPlaybackState?.('buffering');
+    }
+}
+
+// Mirroring: the sender's offer may arrive before the player for it exists.
+let pendingMirroringOffer: string = null;
+
+function answerMirroringOffer(sdp: string) {
+    player.answerOffer(sdp)
+        .then((answer) => window.targetAPI.sendMirroringAnswer(answer))
+        .catch((e) => {
+            logger.error('Could not answer the mirroring offer:', e);
+            window.targetAPI.sendPlaybackError({ message: `Mirroring failed: ${e}`, kind: 'unsupported' });
+        });
+}
+
+window.targetAPI.onMirroringOffer?.((_event, offer: { sdp: string }) => {
+    if (player && player.playerType === PlayerType.Mirror) {
+        answerMirroringOffer(offer.sdp);
+    } else {
+        pendingMirroringOffer = offer.sdp;
+    }
+});
+
+// Sender queue inserts and removals (v4). The service keeps the queue; this is our copy of it.
+window.targetAPI.onQueueUpdate?.((_event, update: { items: MediaItem[], index: number, autoplay: boolean }) => {
+    if (cachedPlaylist === null) {
+        return;
+    }
+    cachedPlaylist = { ...cachedPlaylist, items: update.items, autoplay: update.autoplay };
+    playlistIndex = update.index;
+    logger.info(`Queue updated: ${update.items.length} items, playing ${update.index}`);
+});
 
 // Sender generated event handlers
 window.targetAPI.onPause(() => { player?.pause(); });
@@ -872,32 +930,25 @@ function mediaPlayHandler(message: PlayMessage) {
 function mediaEndHandler() {
     showDurationTimer.stop();
 
-    if (isMediaItem) {
-        playlistIndex++;
-
-        if (playlistIndex < cachedPlaylist.items.length) {
-            logger.info('Media playback ended:', cachedPlayMediaItem);
-            cachedPlayMediaItem = cachedPlaylist.items[playlistIndex];
-            playItemCached = true;
-            window.targetAPI.sendPlayRequest(playMessageFromMediaItem(cachedPlaylist.items[playlistIndex]), playlistIndex);
-        }
-        else {
-            logger.info('End of playlist:', cachedPlayMediaItem);
-            sendPlaybackUpdate(PlaybackState.Idle);
-
-            setIdleScreenVisible(true);
-            player.setAutoPlay(false);
-            player.stop();
-        }
-    }
-    else {
+    // v4 queues can turn autoplay off: then the item just ends, like a single item.
+    const advance = isMediaItem && cachedPlaylist.autoplay !== false && playlistIndex + 1 < cachedPlaylist.items.length;
+    if (advance) {
         logger.info('Media playback ended:', cachedPlayMediaItem);
-        sendPlaybackUpdate(PlaybackState.Idle);
-
-        setIdleScreenVisible(true);
-        player.setAutoPlay(false);
-        player.stop();
+        window.targetAPI.sendEvent(new EventMessage(Date.now(), new MediaItemEvent(EventType.MediaItemEnd, cachedPlayMediaItem)));
+        playlistIndex++;
+        cachedPlayMediaItem = cachedPlaylist.items[playlistIndex];
+        playItemCached = true;
+        window.targetAPI.sendPlayRequest(playMessageFromMediaItem(cachedPlaylist.items[playlistIndex]), playlistIndex);
+        return;
     }
+
+    logger.info(isMediaItem ? 'End of playlist:' : 'Media playback ended:', cachedPlayMediaItem);
+    window.targetAPI.sendPlaybackState?.('ended');
+    sendPlaybackUpdate(PlaybackState.Idle);
+
+    setIdleScreenVisible(true);
+    player.setAutoPlay(false);
+    player.stop();
 
     window.targetAPI.sendEvent(new EventMessage(Date.now(), new MediaItemEvent(EventType.MediaItemEnd, cachedPlayMediaItem)));
 }

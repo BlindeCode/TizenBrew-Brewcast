@@ -12,9 +12,12 @@ import {
     skipBack,
     skipForward,
     playerCtrlProgressBarHandle,
+    videoElement,
+    isLive,
 } from 'common/player/Renderer';
 import { KeyCode, RemoteKeyCode, ControlBarMode } from 'lib/common';
 import * as common from 'lib/common';
+import { TrackManager } from 'src/player/Tracks';
 
 const captionsBaseHeightCollapsed = 150;
 const captionsBaseHeightExpanded = 320;
@@ -34,6 +37,8 @@ if (typeof tizen !== 'undefined') {
         'MediaFastForward', 'MediaPlay', 'MediaPause', 'MediaStop'
     ]);
 }
+
+const tracks = new TrackManager(videoElement, () => isLive);
 
 function leavePlayer() {
     window.tizenOSAPI.stopped();
@@ -140,6 +145,7 @@ export function targetPlayerCtrlStateUpdate(event: PlayerControlEvent): boolean 
 export function targetPlayerCtrlPostStateUpdate(event: PlayerControlEvent) {
     switch (event) {
         case PlayerControlEvent.Load: {
+            tracks.attach(player);
             player.setPlayPauseCallback(() => {
                 uiHideTimer.enable();
                 uiHideTimer.start();
