@@ -10,12 +10,24 @@ BrewCast speaks FCast protocol v4: encrypted TLS 1.3 connections, with the recei
 a key fingerprint that senders get from mDNS or the on-screen QR code. It falls back to v3/v2 for
 older senders and for TVs whose runtime can't do TLS 1.3.
 
+It aims to do everything FUTO's own v4 receiver does:
+
+- Videos, audio, HLS and DASH streams, and images, including queues that mix them.
+- Queues that senders can edit while they play, with autoplay on or off.
+- Audio and subtitle track selection, and external subtitles (WebVTT, SRT, ASS/SSA).
+- Media served straight from the sender's device over the FCast connection (FCompanion).
+- Screen mirroring over WebRTC, where the TV's browser supports it.
+- Several senders at once, which see each other's changes.
+
 > [!WARNING]
 > **Not tested on a TV yet.** Casting works end to end against FCast's reference sender in local
 > tests, but the module isn't published for TizenBrew yet, and some TV behaviour is still unverified.
 > [docs/gap-analysis.md](docs/gap-analysis.md) has the status and what's still open.
 
 ## Installing (once published)
+
+TizenBrew loads modules from the repository's default branch (`main`) through jsDelivr, so this
+works once the module is on `main`.
 
 1. In TizenBrew's module manager, add the GitHub module `gh/BlindeCode/tizenbrew-brewcast`.
 2. In TizenBrew's settings, enable **auto-launch service** for BrewCast. Otherwise the TV is only
@@ -26,8 +38,9 @@ older senders and for TVs whose runtime can't do TLS 1.3.
 | Path | What it is |
 |------|------------|
 | `package.json` | TizenBrew module manifest (`appPath`, `serviceFile`, `keys`) |
+| `module/` | The built module that TizenBrew loads (generated; see Development) |
 | `receivers/tizen/service/` | Network service TizenBrew runs in Node: listener, discovery, page channel |
-| `receivers/tizen/src/` | TV pages: main screen (QR code) and player |
+| `receivers/tizen/src/` | TV pages: main screen (QR code), player and image viewer |
 | `receivers/common/` | Shared TypeScript and assets from upstream's receivers, plus protocol v4 (`web/v4/`) |
 | `docs/` | Project notes, including the gap analysis |
 
@@ -42,9 +55,11 @@ npm test               # protocol tests
 npm run build:module   # builds the pages and service into ./module
 ```
 
-`module/` is what TizenBrew loads: `appPath` and `serviceFile` point into it. Upstream's signed
-`.wgt` build steps are kept in [receivers/tizen/README.md](receivers/tizen/README.md) for reference
-only; that path still uses upstream's C# service, which the pages no longer talk to.
+`module/` is what TizenBrew loads: `appPath` and `serviceFile` point into it. It's committed,
+because TizenBrew fetches modules from the repository through jsDelivr, so rebuild it and commit it
+along with any change under `receivers/`. The build is reproducible. Upstream's signed `.wgt` build
+steps are kept in [receivers/tizen/README.md](receivers/tizen/README.md) for reference only; that
+path still uses upstream's C# service, which the pages no longer talk to.
 
 ## Where the code comes from
 

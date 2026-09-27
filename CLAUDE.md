@@ -15,13 +15,24 @@ TizenBrew serves the module's pages from `http://127.0.0.1:8081` and runs `servi
 Node service. The root `package.json` is the TizenBrew module manifest.
 
 - **Service** (`receivers/tizen/service/`, bundled to `dist/service/service.js`): TCP listener on
-  46899, mDNS, protocol sessions, play preparation. `Main.ts` also exports the getters that shared
-  code imports as `src/Main`. `Ipc.ts` is the page channel: SSE + POST on `127.0.0.1:46897`.
-  `Platform.ts` wraps the TV: device name, storage in `/home/owner/share`, and opening the module via
-  TizenBrew AppControl.
-- **Pages** (`receivers/tizen/src/`): `main` (QR code, connection info) and `player`, with the
-  renderers from `receivers/common/web`. `ServiceClient.ts` talks to the service. Pages switch with
-  `location.replace` and hand the play over in `sessionStorage` (`playData`).
+  46899, mDNS, protocol sessions. `Main.ts` wires it up and exports the getters that shared code
+  imports as `src/Main`. `MediaSession.ts` owns what's loaded, including the queue: it applies the
+  reference receiver's rules and error kinds, relays to other senders, and passes tracks, subtitles
+  and mirroring between senders and pages. `Ipc.ts` is the page channel: SSE + POST on
+  `127.0.0.1:46897`, which also serves `Companion.ts` (FCompanion bridge, `/fcomp/<provider>/<id>`)
+  and `Subtitles.ts` (`/subtitle?url=`, SRT/ASS to WebVTT). `Platform.ts` wraps the TV: device
+  name, storage in `/home/owner/share`, and opening the module via TizenBrew AppControl.
+- **Pages** (`receivers/tizen/src/`): `main` (QR code, connection info; probes what the TV plays,
+  `Capabilities.ts`), `player` and `viewer` (images), with the renderers from
+  `receivers/common/web`. `ServiceClient.ts` talks to the service; `ContentPage.ts` is the service
+  side of the player and viewer. The service sends `load` (replayed when a page connects; `loadId`
+  tells them apart) and `item` (the queue item to play); pages play one item at a time and report
+  back. `player/Tracks.ts` reports and switches tracks. Pages switch with `location.replace` and
+  hand the load over in `sessionStorage` (`playData`).
+- **`module/`** is the built module, committed because TizenBrew loads it from the repo through
+  jsDelivr. After changing anything under `receivers/`, run `npm run build:module` and commit
+  `module/` together with the change. The build is reproducible, so an unchanged source gives an
+  unchanged `module/`.
 - **Protocol** (`receivers/common/web/`): `FCastSession.ts` and `TcpListenerService.ts` handle
   v1-v4. v4 lives in `v4/`: `Codec.ts` translates v4 FlatBuffers to and from the v2/v3 message model
   that everything else uses, and `Certificate.ts` makes the self-signed ECDSA P-256 identity whose
@@ -40,9 +51,9 @@ Keep the `receivers/{tizen,common}` layout. The webpack and tsconfig files impor
 ```bash
 cd receivers/tizen
 npm ci                   # the SessionStart hook runs npm install in cloud sessions
-npm test                 # jest: v4 certificate, codec and socket-level session tests
-npm run build            # webpack -> dist/{main_window,player,assets,service}
-npm run build:module     # build + copy into <repo>/module/ (what TizenBrew loads)
+npm test                 # jest: v4 certificate, codec, session and media-session tests
+npm run build            # webpack -> dist/{main_window,player,viewer,assets,service}
+npm run build:module     # build + copy into <repo>/module/ (what TizenBrew loads; committed)
 npx eslint src service test
 # Shared files: run eslint from receivers/ with -c tizen/eslint.config.mjs
 ```
@@ -56,7 +67,11 @@ Interop testing (not in the repo): upstream's workspace can't be built here, bec
 live on gitlab.futo.org. Instead, copy `senders/terminal` into the scratchpad as a standalone crate
 that points at `sdk/sender/fcast-sender-sdk`, and add a `--fp` flag. Run the service with
 `BREWCAST_DATA_DIR=<dir> node <sandbox> module/service/service.js`, where the sandbox mimics
-TizenBrew's `serviceLauncher.js` (`vm.runInContext`).
+TizenBrew's `serviceLauncher.js` (`vm.runInContext`). For end-to-end runs, give that sender a
+scripted mode (JSON commands on stdin, SDK events on stdout), serve `module/` and test media on
+`127.0.0.1:8081`, and drive the pages with Playwright (`/opt/pw-browsers`). Playwright's Chromium
+has no H.264, so make VP8/VP9/Opus media; `pip install imageio-ffmpeg` provides an ffmpeg. Without
+`--fp` the SDK won't connect at all, so test v3 senders with a raw JSON client.
 
 ## Upstream reference: `../fcast-upstream` is READ-ONLY
 
