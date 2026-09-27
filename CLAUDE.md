@@ -32,7 +32,9 @@ Node service. The root `package.json` is the TizenBrew module manifest.
 - **`module/`** is the built module, committed because TizenBrew loads it from the repo through
   jsDelivr. After changing anything under `receivers/`, run `npm run build:module` and commit
   `module/` together with the change. The build is reproducible, so an unchanged source gives an
-  unchanged `module/`.
+  unchanged `module/`. Bump the root `package.json` version with every change that reaches users:
+  senders see it as `appVersion` (mDNS TXT and the handshake), which is the only way to tell which
+  build a TV is running.
 - **Protocol** (`receivers/common/web/`): `FCastSession.ts` and `TcpListenerService.ts` handle
   v1-v4. v4 lives in `v4/`: `Codec.ts` translates v4 FlatBuffers to and from the v2/v3 message model
   that everything else uses, and `Certificate.ts` makes the self-signed ECDSA P-256 identity whose
