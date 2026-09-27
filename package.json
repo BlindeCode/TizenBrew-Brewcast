@@ -1,0 +1,23 @@
+{
+  "name": "tizenbrew-brewcast",
+  "version": "0.1.0",
+  "description": "BrewCast: an FCast-compatible receiver for Samsung Tizen TVs, as a TizenBrew module.",
+  "author": "BlindeCode",
+  "license": "MIT",
+  "private": true,
+  "repository": "github:BlindeCode/tizenbrew-brewcast",
+  "packageType": "app",
+  "appName": "BrewCast",
+  "appPath": "module/main_window/index.html",
+  "serviceFile": "module/service/service.js",
+  "keys": [
+    "MediaPlayPause",
+    "MediaPlay",
+    "MediaPause",
+    "MediaStop",
+    "MediaRewind",
+    "MediaFastForward",
+    "MediaTrackPrevious",
+    "MediaTrackNext"
+  ]
+}

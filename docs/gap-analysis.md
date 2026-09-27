@@ -8,6 +8,60 @@ Written 2026-09-27 from these sources:
 Paths without a prefix are relative to this repo. `upstream:` paths are in `../fcast-upstream`, and
 `tizenbrew:` paths are in the TizenBrew repo.
 
+## Status (updated 2026-09-27)
+
+What follows the status section is the original analysis, unchanged. Since it was written:
+
+| Work order step ([§6](#6-proposed-work-order)) | State |
+|---|---|
+| 1. Fix the web build | **Done.** Upstream's lint errors are fixed too. The pages were also out of date with the shared renderers, so they now follow upstream's webOS pages. |
+| 2. Probe module on a TV | **Not done.** The §5 questions are still open (see below). |
+| 3. Node service | **Done** (`receivers/tizen/service/`), ported from the webOS service onto `common/web` at `5c79300`. |
+| 4. IPC and launch | **Done:** SSE + POST on `127.0.0.1:46897`. Launching through TizenBrew AppControl is implemented but unverified. |
+| 5. Discovery | **Done**, using `multicast-dns`, because `@futo/mdns-js` is only on FUTO's registry. TXT carries `v` and `fp`. |
+| 6. Packaging | **Done:** the built module is committed in `module/` (rebuilt with `npm run build:module`; the build is reproducible). |
+| 7. Cleanup of the C# / `.wgt` path | **Not done.** That path is now stale: the pages no longer speak MessagePort. |
+| 8. Protocol v4 | **Done**, matching what FUTO's reference receiver (`crates/receiver-core`) does. See below. |
+
+**Protocol v4 coverage.** Everything the reference receiver handles:
+- The TLS 1.3 upgrade with a persisted ECDSA P-256 key and `fp`, the introductions, the heartbeat,
+  and Error replies with packet numbers.
+- Load (single item and queue); progress, state (including Buffering and Ended), volume and speed
+  both ways; progress at the sender's SetProgressUpdateInterval.
+- Queues, kept by the service (`service/MediaSession.ts`): QueueItemSelected, QueueInsert and
+  QueueRemove with the reference receiver's checks and error kinds, `autoplay`, relays to the other
+  senders (without request headers), and announcements when the TV or autoplay changes the item.
+- TracksAvailable/ChangeTrack for video, audio and subtitle tracks (hls.js, dash.js, native), and
+  AddSubtitleSource (WebVTT, plus SRT and ASS/SSA converted by the service).
+- FCompanion, including media from one connection played through another
+  (`service/Companion.ts`).
+- Mirroring (StartMirroringSession/MirroringSessionDescription), with the player page as the WebRTC
+  answerer. Advertised only when the TV's browser has WebRTC.
+- Images (a viewer page), SeekOutOfRange clamping, and load errors reported as ResourceNotFound,
+  UnsupportedFormat or Internal to the sender that loaded the media.
+- `ReceiverIntroduction` capabilities come from what the TV's browser reports it can play.
+
+Differences from the reference receiver, because the TV's browser can't do otherwise: "audio off"
+mutes instead of dropping the track, and HLS video renditions are reported as one video track.
+
+*Protocol limitation:* a v4 receiver can't be reached by a sender that connects by IP without
+knowing `fp` (the SDK refuses to upgrade). That's inherent to the protocol, and the same for FUTO's
+desktop receiver.
+
+**How it was verified (in the dev container, not on a TV).**
+- 44 jest tests pass, including socket-level tests of the queue, track, subtitle, companion and
+  mirroring rules.
+- End to end, 43 checks: upstream's Rust sender SDK (scripted) drives the built module, with the
+  pages in Chromium and the service in a copy of TizenBrew's service sandbox. It covers queues with
+  autoplay (video, image, video), queue edits and their errors, autoplay off, transport and progress
+  intervals, HLS audio/subtitle switching, external subtitles, FCompanion playback and seeking,
+  relays between two senders, error kinds, mirroring from a browser peer, and a raw v3 JSON sender.
+
+**Still unknown until tested on a TV:** everything in [§5](#5-unknowns-that-need-a-real-tv).
+Especially the Node version (v4 needs Node 12+; the bundle parses as ES2018), whether UDP 5353 and
+TCP 46899 are usable from TizenBrew's service, whether AppControl launching works, which formats the
+TV's player accepts, and whether its browser has WebRTC for mirroring.
+
 ## Summary
 
 - **What we have.** A Tizen web UI (main page with a QR code, plus an HTML5 player using hls.js and

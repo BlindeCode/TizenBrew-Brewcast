@@ -1,5 +1,7 @@
 // Protocol Documentation: https://gitlab.futo.org/videostreaming/fcast/-/wikis/Protocol-version-3
+// Highest version of the JSON protocol (v1-v3). Version 4 is FlatBuffers over TLS, see v4/.
 export const PROTOCOL_VERSION = 3;
+export const V4_PROTOCOL_VERSION = 4;
 
 export enum Opcode {
     None = 0,
@@ -22,6 +24,8 @@ export enum Opcode {
     SubscribeEvent = 17,
     UnsubscribeEvent = 18,
     Event = 19,
+    Flatbuf = 20,       // v4 only
+    Resource = 21,      // v4 only
 };
 
 export enum PlaybackState {

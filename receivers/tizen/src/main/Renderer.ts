@@ -57,10 +57,14 @@ export function targetKeyDownEventListener(event: KeyboardEvent): { handledCase:
 
         // Handled cases
 
-        // WebOS 22 and earlier does not work well using the history API,
-        // so manually handling page navigation...
+        // Page switches replace the history entry, so going back returns to whatever opened
+        // us (TizenBrew's module list). Standalone, there is nothing to go back to: exit.
         case RemoteKeyCode.Back:
-            window.webOS.platformBack();
+            if (history.length > 1) {
+                history.back();
+            } else if (typeof tizen !== 'undefined') {
+                tizen.application.getCurrentApplication().exit();
+            }
             handledCase = true;
             key = 'Back';
             break;

@@ -45,16 +45,44 @@ export class ConnectionMonitor {
     private static uiConnectUpdateTimeout = 100;
     private static uiDisconnectUpdateTimeout = 2000; // Senders may reconnect, but generally need more time
     private static uiUpdateMap = new Map<string, any>(); // { event: string, uiUpdateCallback: () => void }
+    // Protocol v4 heartbeat (spec, "Heartbeat"): ping after 3s without any packet from the sender,
+    // end the session after 6s. v2/v3 keep upstream's policy: a ping every 2.5s, disconnect after
+    // four unanswered ones.
+    private static v4PingAfterMs = 3000;
+    private static v4DeadAfterMs = 6000;
+    private static tickMs = 500;
+    private static lastLegacyPingAt = new Map<string, number>();
+    private static v4PingedForPacketAt = new Map<string, number>();
 
     constructor() {
         ConnectionMonitor.logger = new Logger('ConnectionMonitor', LoggerType.BACKEND);
 
         setInterval(() => {
             if (ConnectionMonitor.backendConnections.size > 0) {
+                const now = Date.now();
                 for (const sessionId of ConnectionMonitor.backendConnections.keys()) {
                     const listener = ConnectionMonitor.backendConnections.get(sessionId);
+                    const version = listener.getSessionProtocolVersion(sessionId);
 
-                    if (listener.getSessionProtocolVersion(sessionId) >= 2) {
+                    if (version >= 4) {
+                        const lastPacketAt = listener.getSession(sessionId).lastPacketAt;
+                        if (now - lastPacketAt >= ConnectionMonitor.v4DeadAfterMs) {
+                            ConnectionMonitor.logger.warn(`No packet from session ${sessionId} for ${now - lastPacketAt}ms. Disconnecting...`);
+                            listener.disconnect(sessionId);
+                        } else if (now - lastPacketAt >= ConnectionMonitor.v4PingAfterMs &&
+                            ConnectionMonitor.v4PingedForPacketAt.get(sessionId) !== lastPacketAt) {
+                            ConnectionMonitor.v4PingedForPacketAt.set(sessionId, lastPacketAt);
+                            listener.send(Opcode.Ping, null, sessionId);
+                        }
+                        continue;
+                    }
+
+                    if (version >= 2) {
+                        if (now - (ConnectionMonitor.lastLegacyPingAt.get(sessionId) || 0) < ConnectionMonitor.connectionPingTimeout) {
+                            continue;
+                        }
+                        ConnectionMonitor.lastLegacyPingAt.set(sessionId, now);
+
                         if (ConnectionMonitor.heartbeatRetries.get(sessionId) > 3) {
                             ConnectionMonitor.logger.warn(`Could not ping device with connection id ${sessionId}. Disconnecting...`);
                             listener.disconnect(sessionId);
@@ -65,14 +93,16 @@ export class ConnectionMonitor {
                         listener.send(Opcode.Ping, null, sessionId);
                         ConnectionMonitor.heartbeatRetries.set(sessionId, ConnectionMonitor.heartbeatRetries.get(sessionId) + 1);
                     }
-                    else if (listener.getSessionProtocolVersion(sessionId) === undefined) {
+                    else if (version === undefined) {
                         ConnectionMonitor.logger.warn(`Session ${sessionId} was not found in the list of active sessions. Removing...`);
                         ConnectionMonitor.backendConnections.delete(sessionId);
                         ConnectionMonitor.heartbeatRetries.delete(sessionId);
+                        ConnectionMonitor.lastLegacyPingAt.delete(sessionId);
+                        ConnectionMonitor.v4PingedForPacketAt.delete(sessionId);
                     }
                 }
             }
-        }, ConnectionMonitor.connectionPingTimeout);
+        }, ConnectionMonitor.tickMs);
     }
 
     public static onPingPong(sessionId: string) {
@@ -99,6 +129,8 @@ export class ConnectionMonitor {
         ConnectionMonitor.logger.info(`Device disconnected: ${JSON.stringify(value)}`);
         ConnectionMonitor.backendConnections.delete(value.sessionId);
         ConnectionMonitor.heartbeatRetries.delete(value.sessionId);
+        ConnectionMonitor.lastLegacyPingAt.delete(value.sessionId);
+        ConnectionMonitor.v4PingedForPacketAt.delete(value.sessionId);
 
         const senderUpdateQueue = ConnectionMonitor.uiUpdateMap.get(value.data.address);
         senderUpdateQueue.push({ event: 'disconnect', uiUpdateCallback: uiUpdateCallback });

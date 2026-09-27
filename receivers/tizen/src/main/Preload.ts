@@ -1,117 +1,39 @@
-import { preloadData } from 'common/main/Preload';
-import { toast, ToastIcon } from 'common/components/Toast';
-import * as tizen from 'tizen-common-web';
-import { network } from 'tizen-tv-webapis';
+import { preloadData } from 'common/Preload';
+import { EventMessage } from 'common/Packets';
+import { ServiceClient } from 'src/ServiceClient';
+import { probeCapabilities } from 'src/Capabilities';
 
-enum RemoteKeyCode {
-    Stop = 413,
-    Rewind = 412,
-    Play = 415,
-    Pause = 19,
-    FastForward = 417,
-    Back = 10009,
-    MediaPlayPause = 10252,
-}
+const service = new ServiceClient();
 
-const serviceId = 'smqfcwo4ld.FCastReceiverService.dll';
-// const serviceId = 'io.github.blindecode.brewcastservice';
-
-tizen.tvinputdevice.registerKeyBatch(['MediaRewind',
-    'MediaFastForward', 'MediaPlay', 'MediaPause', 'MediaStop'
-]);
-
-const manufacturer = tizen.systeminfo.getCapability("http://tizen.org/system/manufacturer");
-const modelName = tizen.systeminfo.getCapability("http://tizen.org/system/model_name");
-
-// network.getTVName() does not return a user-friendly name usually...
-// preloadData.deviceInfo = { name: network.getTVName(), addresses: [network.getIp()] };
-preloadData.deviceInfo = { name: `${manufacturer} ${modelName}`, addresses: [network.getIp()] };
-preloadData.onDeviceInfoCb();
-
-let servicePort;
-const ipcPort = tizen.messageport.requestLocalMessagePort('ipcPort');
-const ipcListener = ipcPort.addMessagePortListener((data) => {
-    const messageIndex = data.findIndex((i) => { return i.key === 'message' });
-    const dataIndex = data.findIndex((i) => { return i.key === 'data' });
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    const message = JSON.parse(data[dataIndex].value as string);
-    console.log('Received data:', JSON.stringify(data));
-    // console.log('Received message:', JSON.stringify(message));
-
-    switch (data[messageIndex].value) {
-        case 'serviceStart':
-            servicePort = tizen.messageport.requestRemoteMessagePort(serviceId, 'ipcPort');
-            break;
-
-        case 'serviceStarted':
-        case 'getSystemInfo':
-            console.log('System information');
-            console.log(`BuildDate: ${message.buildDate}`);
-            console.log(`BuildId: ${message.buildId}`);
-            console.log(`BuildRelease: ${message.buildRelease}`);
-            console.log(`BuildString: ${message.buildString}`);
-            break;
-
-        case 'toast': {
-            toast(message.message, message.icon, message.duration);
-            break;
-        }
-
-        case 'connect':
-            preloadData.onConnectCb(null, message);
-            break;
-
-        case 'disconnect':
-            preloadData.onDisconnectCb(null, message);
-            break;
-
-        case 'ping':
-            preloadData.onPingCb(null, message);
-            break;
-
-        case 'play':
-            sessionStorage.setItem('playData', JSON.stringify(message));
-            window.open('../player/index.html', '_self');
-            break;
-
-        default:
-            console.warn(`Unknown ipc message type: ${data[messageIndex].value}, value: ${data[dataIndex].value}`);
-            break;
-    }
+service.on('device_info', (info) => {
+    preloadData.deviceInfo = info;
+    preloadData.onDeviceInfoCb();
 });
 
-tizen.application.getAppsContext((contexts: tizen.ApplicationContext[]) => {
+service.on('toast', (message) => preloadData.onToastCb(message.message, message.icon, message.duration));
+service.on('connect', (message) => preloadData.onConnectCb(null, message));
+service.on('disconnect', (message) => preloadData.onDisconnectCb(null, message));
+service.on('event_subscribed_keys_update', (keys) => preloadData.onEventSubscribedKeysUpdate(keys));
+
+// Something was cast (or was already playing when this page opened): show it.
+service.on('load', (playInfo) => {
+    sessionStorage.setItem('playData', JSON.stringify(playInfo));
+    location.replace(`../${playInfo.contentViewer}/index.html`);
+});
+
+preloadData.sendEventCb = (message: EventMessage) => {
+    service.call('send_event', message).catch((e) => console.error('Main: send_event failed', e));
+};
+
+window.targetAPI.getSessions(() => service.call('get_sessions'));
+window.targetAPI.initializeSubscribedKeys(() => service.call('get_subscribed_keys'));
+
+// Start receiving once renderer.js (end of <body>) has registered its callbacks.
+document.addEventListener('DOMContentLoaded', () => {
+    service.connect();
     try {
-        servicePort = tizen.messageport.requestRemoteMessagePort(serviceId, 'ipcPort');
-        servicePort.sendMessage([{ key: 'command', value: "getSystemInfo" }]);
-    }
-    catch (error) {
-        console.warn(`Main: preload error setting up service port, will attempt again upon service start ${JSON.stringify(error)}`);
-    }
-
-    if (!contexts.find(ctx => ctx.appId === serviceId)) {
-        tizen.application.launch(serviceId, () => {
-            console.log('Main: preload launched network service');
-        }, (error: tizen.WebAPIError) => {
-            console.error(`Main: preload error launching network service ${JSON.stringify(error)}`);
-            toast(`Main: error launching network service ${JSON.stringify(error)}`, ToastIcon.ERROR);
-        });
-    }
-}, (error: tizen.WebAPIError) => {
-    console.error(`Main: preload error querying running applications ${JSON.stringify(error)}`);
-    toast(`Main: error querying running applications ${JSON.stringify(error)}`, ToastIcon.ERROR);
-});
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-document.addEventListener('keydown', (event: any) => {
-    // console.log("KeyDown", event);
-
-    switch (event.keyCode) {
-        case RemoteKeyCode.Back:
-            tizen.application.getCurrentApplication().exit();
-            break;
-        default:
-            break;
+        service.call('report_capabilities', probeCapabilities()).catch((e) => console.error('Main: report_capabilities failed', e));
+    } catch (e) {
+        console.error('Main: could not probe capabilities', e);
     }
 });

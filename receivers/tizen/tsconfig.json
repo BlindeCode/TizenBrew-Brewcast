@@ -18,5 +18,5 @@
       "common/*": ["../common/web/*"],
     }
   },
-  "exclude": [ "node_modules", "test" ]
+  "exclude": [ "node_modules", "test", "service" ]
 }

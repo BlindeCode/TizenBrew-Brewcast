@@ -87,7 +87,10 @@ function renderIPsAndQRCode() {
         addresses: addresses,
         services: [
             { port: 46899, type: 0 }, //TCP
-        ]
+        ],
+        // Protocol v4: the TXT records, including the `fp` fingerprint senders pin. Scanning the
+        // QR code is the tamper-proof way to learn it.
+        ...(value.txt ? { txt: value.txt } : {}),
     };
 
     const json = JSON.stringify(fcastConfig);

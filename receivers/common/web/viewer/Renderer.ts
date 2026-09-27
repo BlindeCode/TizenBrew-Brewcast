@@ -28,7 +28,8 @@ const playerCtrlAction = document.getElementById("action");
 const playerCtrlPlaylistLength = document.getElementById("playlistLength");
 const playerCtrlPlayNext = document.getElementById("playNext");
 
-let cachedPlaylist: PlaylistContent = null;
+// v4 queues carry `autoplay`; v3 playlists always advance.
+let cachedPlaylist: PlaylistContent & { autoplay?: boolean } = null;
 let cachedPlayMediaItem: MediaItem = null;
 let playlistIndex = 0;
 let isMediaItem = false;
@@ -81,6 +82,18 @@ function onPlay(_event, value: PlayMessage, proxyUrl: string = null) {
         genericViewer.src = '';
         idleBackground.style.display = 'none';
         idleIcon.style.display = 'none';
+
+        imageViewer.onerror = () => {
+            // Clearing `src` fires errors too.
+            if (imageViewer.getAttribute('src') !== src) {
+                return;
+            }
+            loadingTimer.stop();
+            loadingSpinner.style.display = 'none';
+            logger.error('Could not load image:', src);
+            toast('Could not load the image', ToastIcon.WARNING);
+            window.targetAPI.sendPlaybackError({ message: `Could not load image ${value.url}`, kind: 'network' });
+        };
 
         imageViewer.src = src;
         imageViewer.style.display = 'block';
@@ -176,6 +189,16 @@ window.targetAPI.onSeek((_event, value: SeekMessage) => { logger.warn('onSeek ha
 window.targetAPI.onSetVolume((_event, value: SetVolumeMessage) => { logger.warn('onSetVolume handler invoked for generic content viewer'); });
 window.targetAPI.onSetSpeed((_event, value: SetSpeedMessage) => { logger.warn('onSetSpeed handler invoked for generic content viewer'); });
 window.targetAPI.onSetPlaylistItem((_event, value: SetPlaylistItemMessage) => { setPlaylistItem(value.itemIndex); });
+
+// Sender queue inserts and removals (v4). The service keeps the queue; this is our copy of it.
+window.targetAPI.onQueueUpdate?.((_event, update: { items: MediaItem[], index: number, autoplay: boolean }) => {
+    if (cachedPlaylist === null) {
+        return;
+    }
+    cachedPlaylist = { ...cachedPlaylist, items: update.items, autoplay: update.autoplay };
+    playlistIndex = update.index;
+    playerCtrlPlaylistLength.textContent = `${playlistIndex + 1} of ${cachedPlaylist.items.length}`;
+});
 
 connectionMonitor.setUiUpdateCallbacks({
     onConnect: (connections: string[], initialUpdate: boolean = false) => {
@@ -314,10 +337,12 @@ function mediaPlayHandler() {
 }
 
 function mediaEndHandler() {
-    if (playlistIndex < cachedPlaylist.items.length - 1) {
+    // v4 queues can turn autoplay off: then the item just ends.
+    if (cachedPlaylist.autoplay !== false && playlistIndex < cachedPlaylist.items.length - 1) {
         setPlaylistItem(playlistIndex + 1);
     }
     else {
+        window.targetAPI.sendPlaybackState?.('ended');
         logger.info('End of playlist');
         imageViewer.style.display = 'none';
         imageViewer.src = '';

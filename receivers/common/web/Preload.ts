@@ -126,6 +126,11 @@ if (TARGET === 'electron') {
     preloadData.onSetPlaylistItemCb = () => { logger.error('RendererWindow: Callback "onSetPlaylistItem" not set'); };
     preloadData.sendPlayRequestCb = () => { logger.error('RendererWindow: Callback "sendPlayRequest" not set'); };
     preloadData.onPlayPlaylistCb = () => { logger.error('RendererWindow: Callback "onPlayPlaylist" not set'); };
+    // Protocol v4 additions: playback states v3 can't express, queue changes and mirroring.
+    preloadData.sendPlaybackStateCb = () => { logger.error('RendererWindow: Callback "sendPlaybackState" not set'); };
+    preloadData.onQueueUpdateCb = () => { logger.warn('RendererWindow: Callback "onQueueUpdate" not set'); };
+    preloadData.onMirroringOfferCb = () => { logger.warn('RendererWindow: Callback "onMirroringOffer" not set'); };
+    preloadData.sendMirroringAnswerCb = () => { logger.error('RendererWindow: Callback "sendMirroringAnswer" not set'); };
 
     preloadData.onEventSubscribedKeysUpdate = (value: { keyDown: string[], keyUp: string[] }) => {
         preloadData.subscribedKeys.keyDown = new Set(value.keyDown);
@@ -180,6 +185,10 @@ if (TARGET === 'electron') {
         onSetPlaylistItem: (callback: any) => { preloadData.onSetPlaylistItemCb = callback; },
         sendPlayRequest: (message: PlayMessage, playlistIndex: number) => { preloadData.sendPlayRequestCb(message, playlistIndex); },
         onPlayPlaylist: (callback: any) => { preloadData.onPlayPlaylistCb = callback; },
+        sendPlaybackState: (state: 'buffering' | 'ended') => { preloadData.sendPlaybackStateCb(state); },
+        onQueueUpdate: (callback: any) => { preloadData.onQueueUpdateCb = callback; },
+        onMirroringOffer: (callback: any) => { preloadData.onMirroringOfferCb = callback; },
+        sendMirroringAnswer: (sdp: string) => { preloadData.sendMirroringAnswerCb(sdp); },
     };
 } else {
     // @ts-ignore
