@@ -5092,7 +5092,7 @@ class Main {
         on('unsubscribeevent', onSubscriptionChange(false));
     }
     static async start() {
-        logger.info(`${APP_NAME} ${"0.1.0"} service starting, Node ${process.version} on ${process.platform} ${process.arch}`);
+        logger.info(`${APP_NAME} ${"0.1.1"} service starting, Node ${process.version} on ${process.platform} ${process.arch}`);
         Main.emitter = new events_1.EventEmitter();
         Main.ipc = new Ipc_1.IpcServer((method, value) => Main.handleCall(method, value));
         Main.companion = new Companion_1.Companion((sessionId) => { var _a; return (_a = Main.tcpListenerService) === null || _a === void 0 ? void 0 : _a.getSession(sessionId); }, () => Main.bridgeBase());
@@ -5151,7 +5151,7 @@ function getAppName() {
     return APP_NAME;
 }
 function getAppVersion() {
-    return "0.1.0";
+    return "0.1.1";
 }
 function getPlayMessage() {
     return Main.media ? Main.media.currentPlayMessage() : null;
