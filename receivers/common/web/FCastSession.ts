@@ -156,14 +156,9 @@ export class FCastSession {
         const size = 1 + data.length;
         const header = Buffer.alloc(4 + 1);
 
-        // webOS 22 and earlier node versions do not support `writeUint32LE` despite nodejs stating
-        // it should be supported in those versions... `writeUIntLE` however works instead.
-        // @ts-ignore
-        if (TARGET === 'webOS') {
-            header.writeUIntLE(size, 0, 4);
-        } else {
-            header.writeUint32LE(size, 0);
-        }
+        // Not `writeUint32LE`: that spelling only exists since Node 12.19/14.9, and TV runtimes are
+        // older (upstream hit this on webOS 22). `writeUInt32LE` is in every Node version.
+        header.writeUInt32LE(size, 0);
 
         header[4] = opcode;
 
@@ -554,8 +549,12 @@ export class FCastSession {
         }
     }
 
+    // A no-op for v2/v3 senders, which have no equivalent. (Runtimes without v4 can't even build
+    // the message.)
     sendV4Error(kind: ErrorKind, packetNumber: number | null) {
-        this.sendV4Message(encodeError(kind, packetNumber));
+        if (this.isV4) {
+            this.sendV4Message(encodeError(kind, packetNumber));
+        }
     }
 
     // Playback states the v2/v3 model can't express (Buffering, Ended).

@@ -190,6 +190,11 @@ module.exports = [
             service: './service/index.ts',
         },
         target: 'node8.12',
+        // TizenBrew's service sandbox has no `global`, and Node before 12 has no `globalThis`
+        // either, so dependencies that use `global` (memfs) need webpack's lookup instead.
+        node: {
+            global: true,
+        },
         module: {
             rules: [
                 {
