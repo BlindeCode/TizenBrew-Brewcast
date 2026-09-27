@@ -1,7 +1,7 @@
 /.metadata/
 dist
 certs
-FCastReceiver.wgt
+BrewCast.wgt
 
 .env
 FCastReceiver/.buildResult

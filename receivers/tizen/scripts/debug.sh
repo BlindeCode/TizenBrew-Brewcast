@@ -36,8 +36,8 @@ else
     # serial=127.0.0.1:52513
 fi
 
-${tizen} install -n FCastReceiver.wgt -t $target
-output=$(${sdb} -s $serial shell 0 debug ql5ofothoj.fcastreceiver)
+${tizen} install -n BrewCast.wgt -t $target
+output=$(${sdb} -s $serial shell 0 debug smqfcwo4ld.brewcast)
 echo $output
 
 port=$(echo $output | sed -E "s/.*port: ([0-9]+).*/\1/")

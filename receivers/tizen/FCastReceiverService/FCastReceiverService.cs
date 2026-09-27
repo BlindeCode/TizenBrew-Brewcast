@@ -11,7 +11,7 @@ namespace FCastReceiverService
 {
     internal class Program : ServiceApplication
     {
-        private const string AppId = "ql5ofothoj.fcastreceiver";
+        private const string AppId = "smqfcwo4ld.brewcast";
         private const string AppPort = "ipcPort";
         private static AppControl _appControl;
         private static RemotePort _appPort;

@@ -24,6 +24,8 @@
 }
 
 #title-icon {
+    /* BrewCast icon; the FCast logo must not be used as the app's own logo. */
+    background-image: url(../assets/icons/brewcast.svg);
     width: 124px;
     height: 124px;
 }

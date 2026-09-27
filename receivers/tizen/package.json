@@ -1,8 +1,8 @@
 {
-  "name": "com.futo.fcast.receiver",
+  "name": "brewcast",
   "version": "1.0.0",
-  "description": "An application implementing a FCast receiver.",
-  "author": "FUTO",
+  "description": "BrewCast, an FCast-compatible receiver for Samsung Tizen TVs.",
+  "author": "BlindeCode",
   "license": "MIT",
   "scripts": {
     "build": "rm -rf dist/ && rm -rf FCastReceiver/dist/ && webpack --config ./webpack.config.js && cp -r dist/ FCastReceiver/dist/",

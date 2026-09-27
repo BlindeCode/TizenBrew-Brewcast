@@ -13,8 +13,8 @@ enum RemoteKeyCode {
     MediaPlayPause = 10252,
 }
 
-const serviceId = 'ql5ofothoj.FCastReceiverService.dll';
-// const serviceId = 'com.futo.FCastReceiverService';
+const serviceId = 'smqfcwo4ld.FCastReceiverService.dll';
+// const serviceId = 'io.github.blindecode.brewcastservice';
 
 tizen.tvinputdevice.registerKeyBatch(['MediaRewind',
     'MediaFastForward', 'MediaPlay', 'MediaPause', 'MediaStop'

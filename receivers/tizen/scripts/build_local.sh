@@ -24,6 +24,6 @@ cd FCastReceiver
 ${tizen} build-web -- .
 cd .buildResult
 ${tizen} package -t wgt -s default -- .
-${tizen} package -t wgt -s default -r ../../FCastReceiverService/bin/Release/tizen60/com.futo.fcastreceiverservice-1.0.0.tpk -- "FCast Receiver.wgt"
-mv "FCast Receiver.wgt" ../../FCastReceiver.wgt
+${tizen} package -t wgt -s default -r ../../FCastReceiverService/bin/Release/tizen60/io.github.blindecode.brewcastservice-1.0.0.tpk -- "BrewCast.wgt"
+mv "BrewCast.wgt" ../../BrewCast.wgt
 cd ../../

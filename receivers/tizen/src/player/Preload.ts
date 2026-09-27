@@ -4,8 +4,8 @@ import { toast, ToastIcon } from 'common/components/Toast';
 import * as tizen from 'tizen-common-web';
 
 
-const serviceId = 'ql5ofothoj.FCastReceiverService.dll';
-// const serviceId = 'com.futo.FCastReceiverService';
+const serviceId = 'smqfcwo4ld.FCastReceiverService.dll';
+// const serviceId = 'io.github.blindecode.brewcastservice';
 const servicePort = tizen.messageport.requestRemoteMessagePort(serviceId, 'ipcPort');
 
 preloadData.sendPlaybackErrorCb = (error: PlaybackErrorMessage) => {
