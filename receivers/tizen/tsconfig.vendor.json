@@ -1,0 +1,10 @@
+{
+  // Down-levels dependency JavaScript in the service bundle (see webpack.config.js).
+  "compilerOptions": {
+    "allowJs": true,
+    "target": "ES2018",
+    "module": "ESNext",
+    "moduleResolution": "node10",
+    "skipLibCheck": true
+  }
+}

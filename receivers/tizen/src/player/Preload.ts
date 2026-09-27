@@ -1,96 +1,65 @@
 import { preloadData } from 'common/Preload';
-import { Opcode, PlaybackErrorMessage, PlaybackUpdateMessage, VolumeUpdateMessage } from 'common/Packets';
-import { toast, ToastIcon } from 'common/components/Toast';
-import * as tizen from 'tizen-common-web';
+import { EventMessage, PlaybackErrorMessage, PlaybackUpdateMessage, PlayMessage, VolumeUpdateMessage } from 'common/Packets';
+import { ServiceClient } from 'src/ServiceClient';
 
+const service = new ServiceClient();
+const logError = (method: string) => (e: Error) => console.error(`Player: ${method} failed`, e);
 
-const serviceId = 'smqfcwo4ld.FCastReceiverService.dll';
-// const serviceId = 'io.github.blindecode.brewcastservice';
-const servicePort = tizen.messageport.requestRemoteMessagePort(serviceId, 'ipcPort');
+// The play that brought us here (stored by the main page), picked up by the renderer on load.
+// `stopped` tells the service when the user leaves the player on the TV.
+window.tizenOSAPI = {
+    pendingPlay: JSON.parse(sessionStorage.getItem('playData')),
+    stopped: () => service.call('playback_stopped').catch(logError('playback_stopped')),
+};
 
 preloadData.sendPlaybackErrorCb = (error: PlaybackErrorMessage) => {
-    servicePort.sendMessage([
-        { key: 'opcode', value: Opcode.PlaybackError.toString() },
-        { key: 'data', value: JSON.stringify(error) }
-    ]);
+    service.call('send_playback_error', error).catch(logError('send_playback_error'));
 };
 preloadData.sendPlaybackUpdateCb = (update: PlaybackUpdateMessage) => {
-    servicePort.sendMessage([
-        { key: 'opcode', value: Opcode.PlaybackUpdate.toString() },
-        { key: 'data', value: JSON.stringify(update) }
-    ]);
+    service.call('send_playback_update', update).catch(logError('send_playback_update'));
 };
 preloadData.sendVolumeUpdateCb = (update: VolumeUpdateMessage) => {
-    servicePort.sendMessage([
-        { key: 'opcode', value: Opcode.VolumeUpdate.toString() },
-        { key: 'data', value: JSON.stringify(update) }
-    ]);
+    service.call('send_volume_update', update).catch(logError('send_volume_update'));
+};
+preloadData.sendEventCb = (event: EventMessage) => {
+    service.call('send_event', event).catch(logError('send_event'));
+};
+preloadData.sendPlayRequestCb = (message: PlayMessage, playlistIndex: number) => {
+    service.call('play_request', { message: message, playlistIndex: playlistIndex }).catch(logError('play_request'));
 };
 
-window.tizenOSAPI = {
-    pendingPlay: JSON.parse(sessionStorage.getItem('playData'))
-};
+window.targetAPI.getSessions(() => service.call('get_sessions'));
+window.targetAPI.initializeSubscribedKeys(() => service.call('get_subscribed_keys'));
 
-const ipcPort = tizen.messageport.requestLocalMessagePort('ipcPort');
-const ipcListener = ipcPort.addMessagePortListener((data) => {
-    const messageIndex = data.findIndex((i) => { return i.key === 'message' });
-    const dataIndex = data.findIndex((i) => { return i.key === 'data' });
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    const message = JSON.parse(data[dataIndex].value as string);
-    console.log('Received data:', JSON.stringify(data));
-    // console.log('Received message:', JSON.stringify(message));
+service.on('toast', (message) => preloadData.onToastCb(message.message, message.icon, message.duration));
+service.on('connect', (message) => preloadData.onConnectCb(null, message));
+service.on('disconnect', (message) => preloadData.onDisconnectCb(null, message));
+service.on('event_subscribed_keys_update', (keys) => preloadData.onEventSubscribedKeysUpdate(keys));
 
-    switch (data[messageIndex].value) {
-        // case 'serviceStart':
-        //     toast("FCast network service started");
-        //     break;
+service.on('play', (playInfo) => {
+    // The service replays the current play whenever a page connects, including the one that
+    // brought us here: only act on a different one.
+    if (JSON.stringify(playInfo) === sessionStorage.getItem('playData')) {
+        return;
+    }
+    sessionStorage.setItem('playData', JSON.stringify(playInfo));
 
-        case 'toast': {
-            toast(message.message, message.icon, message.duration);
-            break;
-        }
-
-        case 'ping':
-            break;
-
-        case 'play':
-            if (message !== null) {
-                if (preloadData.onPlayCb === undefined) {
-                    window.tizenOSAPI.pendingPlay = message;
-                }
-                else {
-                    preloadData.onPlayCb(null, message);
-                }
-            }
-            break;
-
-        case 'pause':
-            preloadData.onPauseCb();
-            break;
-
-        case 'resume':
-            preloadData.onResumeCb();
-            break;
-
-        case 'stop':
-            window.open('../main_window/index.html', '_self');
-            break;
-
-        case 'seek':
-            preloadData.onSeekCb(null, message);
-            break;
-
-        case 'setvolume':
-            preloadData.onSetVolumeCb(null, message);
-            break;
-
-        case 'setspeed':
-            preloadData.onSetSpeedCb(null, message);
-            break;
-
-        default:
-            console.warn(`Unknown ipc message type: ${data[messageIndex].value}, value: ${data[dataIndex].value}`);
-            break;
+    if (preloadData.onPlayCb === undefined) {
+        window.tizenOSAPI.pendingPlay = playInfo;
+    } else if (playInfo.rendererEvent === 'play-playlist') {
+        preloadData.onPlayPlaylistCb(null, playInfo.rendererMessage, playInfo.playerVolume);
+    } else {
+        preloadData.onPlayCb(null, playInfo.rendererMessage, playInfo.proxyUrl, playInfo.playerVolume);
     }
 });
+
+service.on('pause', () => preloadData.onPauseCb());
+service.on('resume', () => preloadData.onResumeCb());
+service.on('stop', () => location.replace('../main_window/index.html'));
+service.on('seek', (message) => preloadData.onSeekCb(null, message));
+service.on('setvolume', (message) => preloadData.onSetVolumeCb(null, message));
+service.on('setspeed', (message) => preloadData.onSetSpeedCb(null, message));
+service.on('setplaylistitem', (message) => preloadData.onSetPlaylistItemCb(null, message));
+
+// Start receiving once renderer.js (end of <body>) has registered its callbacks.
+document.addEventListener('DOMContentLoaded', () => service.connect());

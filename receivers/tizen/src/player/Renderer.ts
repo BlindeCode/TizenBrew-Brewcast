@@ -16,7 +16,6 @@ import {
 import { KeyCode, RemoteKeyCode, ControlBarMode } from 'lib/common';
 import * as common from 'lib/common';
 
-const logger = window.targetAPI.logger;
 const captionsBaseHeightCollapsed = 150;
 const captionsBaseHeightExpanded = 320;
 const captionsLineHeight = 68;
@@ -28,9 +27,18 @@ const playNextContainer = document.getElementById('playNextContainer');
 const playPrevious = document.getElementById('playPrevious');
 const playNext = document.getElementById('playNext');
 
-tizen.tvinputdevice.registerKeyBatch(['MediaRewind',
-    'MediaFastForward', 'MediaPlay', 'MediaPause', 'MediaStop'
-]);
+// Under TizenBrew the module's package.json `keys` are registered for us, and `tizen` may not be
+// available to pages it serves.
+if (typeof tizen !== 'undefined') {
+    tizen.tvinputdevice.registerKeyBatch(['MediaRewind',
+        'MediaFastForward', 'MediaPlay', 'MediaPause', 'MediaStop'
+    ]);
+}
+
+function leavePlayer() {
+    window.tizenOSAPI.stopped();
+    location.replace('../main_window/index.html');
+}
 
 enum ControlFocus {
     ProgressBar,
@@ -46,7 +54,7 @@ let controlFocus = ControlFocus.ProgressBar;
 // [<<][>][>>]
 // [|<][>][>|]
 // Hide
-let locationMap = {
+const locationMap = {
     ProgressBar: playerCtrlProgressBarHandle,
     Action: actionContainer,
     PlayPrevious: playPreviousContainer,
@@ -119,7 +127,7 @@ function setControlMode(mode: ControlBarMode, immediateHide: boolean = true) {
 
 
 export function targetPlayerCtrlStateUpdate(event: PlayerControlEvent): boolean {
-    let handledCase = false;
+    const handledCase = false;
 
     switch (event) {
         default:
@@ -279,7 +287,7 @@ export function targetKeyDownEventListener(event: KeyboardEvent): { handledCase:
             break;
 
         case RemoteKeyCode.Stop:
-            window.open('../main_window/index.html', '_self');
+            leavePlayer();
             handledCase = true;
             key = 'Stop';
             break;
@@ -332,7 +340,7 @@ export function targetKeyDownEventListener(event: KeyboardEvent): { handledCase:
             break;
 
         case RemoteKeyCode.Back:
-            window.open('../main_window/index.html', '_self');
+            leavePlayer();
             event.preventDefault();
             handledCase = true;
             key = 'Back';

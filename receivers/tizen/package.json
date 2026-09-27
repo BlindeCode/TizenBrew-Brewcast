@@ -6,7 +6,8 @@
   "license": "MIT",
   "scripts": {
     "build": "rm -rf dist/ && rm -rf FCastReceiver/dist/ && webpack --config ./webpack.config.js && cp -r dist/ FCastReceiver/dist/",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "build:module": "scripts/build-module.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.10.0",
@@ -39,7 +40,7 @@
     "http": "^0.0.1-security",
     "https": "^1.0.0",
     "log4js": "^6.9.1",
-    "memfs": "^4.17.2",
+    "memfs": "4.17.2",
     "multicast-dns": "^7.2.5",
     "qrcode": "^1.5.3",
     "tizen-common-web": "^2.0.1",

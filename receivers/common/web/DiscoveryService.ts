@@ -93,7 +93,8 @@ export class DiscoveryService {
         }
 
         const records = this.records(goodbye);
-        this.mdns.respond({ answers: [records.ptr, records.srv, records.txt].concat(records.a) });
+        const answers: any[] = [records.ptr, records.srv, records.txt];
+        this.mdns.respond({ answers: answers.concat(records.a) });
     }
 
     private handleQuery(query: any, rinfo: any) {
@@ -114,7 +115,8 @@ export class DiscoveryService {
                 add(answers, { name: SERVICE_ENUMERATION, type: 'PTR', ttl: OTHER_TTL, data: SERVICE_TYPE });
             } else if (name === SERVICE_TYPE && (type === 'PTR' || type === 'ANY')) {
                 add(answers, records.ptr);
-                [records.srv, records.txt].concat(records.a).forEach((record) => add(additionals, record));
+                const related: any[] = [records.srv, records.txt];
+                related.concat(records.a).forEach((record) => add(additionals, record));
             } else if (name === this.instanceName.toLowerCase()) {
                 if (type === 'SRV' || type === 'ANY') {
                     add(answers, records.srv);
